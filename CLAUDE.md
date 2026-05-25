@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is the `airoh-mini` template — a starting point for structuring a reproducible data analysis. It is built on the [`invoke`](https://www.pyinvoke.org/) task runner. The `airoh` pip package provides reusable invoke tasks; this repo customizes them via `tasks.py` and `invoke.yaml`.
+This is **brainhack-2026-multimodal** — a reproducible multimodal EEG/fMRI fusion pipeline for psychiatric prediction, built for Brainhack School 2026. It is built on the [`invoke`](https://www.pyinvoke.org/) task runner. The `airoh` pip package provides reusable invoke tasks; this repo customizes them via `tasks.py` and `invoke.yaml`.
+
+**Goal:** predict a configurable phenotypic target (e.g. diagnosis, age) using EEG features only, fMRI connectivity features only, and both combined — to compare modality contributions.
+
+**Input formats:** the pipeline accepts flat TSVs or raw tool outputs for each modality:
+- EEG: `eeg_features.tsv` OR `mne_output/` (MNE feature export, one CSV per subject)
+- fMRI: `fmri_features.tsv` OR `halfpipe_output/` (Halfpipe connectivity matrices, one TSV per subject/run/strategy)
+
+**Chunk concept:** subjects (`participant_id`) are the unit of processing.
+
+**Smoke data:** `invoke generate-smoke-data` populates `source_data/smoke/` with 15 synthetic subjects in all four input formats. `invoke run-smoke` uses this data to test the pipeline end-to-end.
 
 ## Persona
 

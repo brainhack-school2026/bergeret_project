@@ -1,19 +1,29 @@
-# invoke.yaml
+# invoke.yaml — project configuration
 
-# Code folder
-code_dir: code
-
-# Notebooks folders
+# Code folders
+code_dir: analysis
 notebooks_dir: notebooks
 
-# source data folders
+# Data folders
 source_data_dir: source_data
-
-# output data folders
 output_data_dir: output_data
 
-# file sources
-files:
-  papers:
-    url: https://api.figshare.com/v2/file/download/9843721
-    output_file: source_data/YNIMG_BrainParcellation_summary.tsv
+# ── Data input configuration ──────────────────────────────────────────────────
+# Point these to your actual data files. Edit paths as needed.
+
+phenotype_file: source_data/phenotype.tsv
+
+# EEG: set eeg_input_type to "tsv" (flat feature table) or "mne" (MNE output folder)
+eeg_input_type: tsv
+eeg_tsv: source_data/eeg_features.tsv
+eeg_mne_dir: source_data/mne_output
+
+# fMRI: set fmri_input_type to "tsv" (flat connectivity table) or "halfpipe" (Halfpipe output)
+fmri_input_type: tsv
+fmri_tsv: source_data/fmri_features.tsv
+fmri_halfpipe_dir: source_data/halfpipe_output
+fmri_halfpipe_strategy: 36P
+
+# ── Prediction configuration ──────────────────────────────────────────────────
+# Column from phenotype_file to predict (e.g. "diagnosis", "age", "anxiety_score")
+target_column: diagnosis
