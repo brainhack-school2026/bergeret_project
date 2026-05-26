@@ -53,13 +53,46 @@ invoke clean              # Remove output_data/ contents
 invoke --list             # Show all available tasks
 ```
 
+## Pipeline steps
+
+The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-predict → run-notebooks`
+
+| Task | Input | Output | Key module |
+|---|---|---|---|
+| `run-load-eeg` | TSV or MNE folder | `output_data/eeg_features.tsv` | `analysis/load_eeg.py` |
+| `run-load-fmri` | TSV or Halfpipe folder | `output_data/fmri_features.tsv` | `analysis/load_fmri.py` |
+| `run-predict` | both feature TSVs + phenotype | `output_data/results/metrics.tsv`, `fold_scores.tsv` | `analysis/predict.py` |
+| `run-notebooks` | `output_data/` | figures in `output_data/` | `notebooks/` |
+
+**Cleaning tasks:** `clean-outputs` removes flat TSVs and PNGs; `clean-predict` removes `output_data/results/`; `clean-smoke` removes `source_data/smoke/`. The top-level `clean` calls all three.
+
+## Prediction pipeline (`analysis/predict.py`)
+
+`run_prediction()` is the main entry point. It executes three conditions — EEG-only, fMRI-only, multimodal — with identical methodology:
+
+1. **Subject alignment** — keep only subjects present in all three inputs (EEG, fMRI, phenotype).
+2. **Task detection** — binary/low-cardinality integer target → classification (balanced accuracy); continuous → regression (MAE, R², Pearson r).
+3. **GLM confound correction** — OLS regression of `age`, `gender`, `study_site` out of features; the target column is never used as a confound.
+4. **Nested cross-validation** — outer k-fold for generalisation, inner k-fold for hyperparameter tuning. Inside each outer fold:
+   - PCA fitted on the training split only (retains `pca_variance` fraction of variance).
+   - `GridSearchCV` on the inner splits selects the best hyperparameters.
+   - Best model evaluated on the held-out outer fold.
+5. **Permutation test** — `n_permutations` shuffles of `y` build a null distribution; p-value = fraction of null scores ≥ observed.
+6. **Paired t-tests** — fold-level scores compared between EEG-only vs fMRI-only, EEG-only vs multimodal, fMRI-only vs multimodal.
+
+**Supported models** (`model_type` in `invoke.yaml`): `logistic`, `ridge`, `elasticnet`, `svm`, `random_forest`. For regression targets, `logistic` maps to `Ridge`.
+
+**Outputs:**
+- `output_data/results/metrics.tsv` — one row per condition: mean/std scores, `p_vs_chance`, paired p-values.
+- `output_data/results/fold_scores.tsv` — raw per-fold scores in long format.
+
 ## Architecture
 
 **Always read `tasks.py` first** before proposing or implementing any pipeline change — it is the authoritative source of what tasks exist, how they are wired, and what parameters they accept.
 
 **Execution flow:** `invoke run` triggers the project's analysis pipeline via `pre=` dependencies declared in `tasks.py`. The three permanent tasks — `fetch`, `run`, `clean` — are always present; intermediate steps are project-specific.
 
-- `invoke.yaml` — all path and data config (`output_data_dir`, `source_data_dir`, `notebooks_dir`, `files:` for downloads)
+- `invoke.yaml` — all path, data, and model config (see Configuration section in README.md)
 - `tasks.py` — project-specific invoke tasks; imports reusable tasks from `airoh.utils`
 - `analysis/` — pure Python analysis logic, called by tasks in `tasks.py`
 - `notebooks/` — Jupyter notebooks executed by `run_notebooks` via `airoh.utils.run_notebooks`; notebooks receive `OUTPUT_DATA_DIR` and `SOURCE_DATA_DIR` as environment variables
@@ -76,12 +109,6 @@ invoke --list             # Show all available tasks
 - The top-level `run` task wires all steps together via `pre=` chains in `tasks.py`.
 
 **Task parameters:** `run-{name}` tasks should expose chunk or subset parameters (e.g. a subject ID, a chunk index) so that individual pieces can be rerun in isolation. They should also support a `smoke` flag for a fast minimal run useful for testing the pipeline end-to-end without running the full analysis.
-
-**Template cleanup:** When starting a new project from this template, remove the demo code before adding project-specific work:
-- Delete `run_simulation` from `tasks.py` and remove it from the `pre=` chains on `run_notebooks` and `run`
-- Delete `analysis/simulation.py` (and the `analysis/` folder if it stays empty)
-- Clear or replace `source_data/CONTENT.md` and `output_data/CONTENT.md` with project-specific descriptions
-- Update `invoke.yaml` (`files:`, paths) for the new project's data sources
 
 **Adding a new analysis step:** add a function to `analysis/`, add a `run-{name}` task and a matching `clean-{name}` task in `tasks.py`, wire both into the top-level `run` and `clean` tasks via `pre=` chains, and create or extend a notebook in `notebooks/` for visualization.
 
