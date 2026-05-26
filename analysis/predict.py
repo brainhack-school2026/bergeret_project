@@ -47,10 +47,15 @@ from sklearn.svm import SVC, SVR
 # ── task detection ──────────────────────────────────────────────────────────
 
 def detect_task(y: pd.Series) -> Literal["classification", "regression"]:
-    """Return 'classification' if y has ≤10 unique integer-like values."""
+    """Return 'classification' if y is categorical or has ≤10 unique integer-like values."""
     if y.dtype.kind in ("i", "u") or set(y.unique()) <= {0, 1}:
         return "classification"
-    if y.nunique() <= 10 and all(float(v).is_integer() for v in y.dropna()):
+    if y.dtype.kind in ("O", "S", "U"):  # object / string dtype → categorical
+        return "classification"
+    try:
+        if y.nunique() <= 10 and all(float(v).is_integer() for v in y.dropna()):
+            return "classification"
+    except (ValueError, TypeError):
         return "classification"
     return "regression"
 
@@ -298,9 +303,10 @@ def run_prediction(
     phenotype_df = phenotype_df[phenotype_df["participant_id"].isin(common_ids)].sort_values("participant_id").reset_index(drop=True)
 
     y_series = phenotype_df.set_index("participant_id").loc[common_ids, target_col]
-    y = y_series.values.astype(float)
-
     task_type = detect_task(y_series)
+
+    # Keep strings as-is for classification (sklearn handles them); cast to float for regression
+    y = y_series.values if task_type == "classification" else y_series.values.astype(float)
     print(f"[predict] Task type: {task_type} | Target: {target_col} | Model: {model_type}")
     primary_metric = "balanced_accuracy" if task_type == "classification" else "pearson_r"
 
