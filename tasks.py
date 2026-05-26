@@ -21,17 +21,56 @@ def generate_smoke_data(c, n_subjects=15, strategies="36P"):
 
 
 @task
-def run_load_eeg(c, smoke=False):
-    """Load EEG features from TSV or MNE output folder → output_data/eeg_features.tsv"""
-    # TODO: implement — check invoke.yaml for eeg_input_type ("tsv" or "mne")
-    print("TODO: run-load-eeg not yet implemented")
+def run_load_eeg(c, subjects=None, smoke=False):
+    """Load EEG features (TSV or MNE folder) → output_data/eeg_features.tsv"""
+    from analysis.load_eeg import load_eeg
+    from airoh.utils import ensure_dir_exist
+
+    out_path = Path(c.config.get("output_data_dir")) / "eeg_features.tsv"
+    if out_path.exists():
+        print(f"[run-load-eeg] Skipping — {out_path} already exists")
+        return
+
+    ensure_dir_exist(c, "output_data_dir")
+    smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
+    eeg_type = c.config.get("eeg_input_type", "auto")
+
+    if smoke:
+        path = smoke_dir / ("mne_output" if eeg_type == "mne" else "eeg_features.tsv")
+    else:
+        path = Path(c.config.get("eeg_mne_dir") if eeg_type == "mne" else c.config.get("eeg_tsv"))
+
+    subjects_list = subjects.split(",") if subjects else None
+    df = load_eeg(path, input_type=eeg_type, subjects=subjects_list)
+    df.to_csv(out_path, sep="\t", index=False)
+    print(f"[run-load-eeg] {len(df)} subjects, {len(df.columns) - 1} features → {out_path}")
 
 
 @task
-def run_load_fmri(c, smoke=False):
-    """Load fMRI connectivity from TSV or Halfpipe output → output_data/fmri_features.tsv"""
-    # TODO: implement — check invoke.yaml for fmri_input_type ("tsv" or "halfpipe")
-    print("TODO: run-load-fmri not yet implemented")
+def run_load_fmri(c, subjects=None, smoke=False):
+    """Load fMRI connectivity (TSV or Halfpipe folder) → output_data/fmri_features.tsv"""
+    from analysis.load_fmri import load_fmri
+    from airoh.utils import ensure_dir_exist
+
+    out_path = Path(c.config.get("output_data_dir")) / "fmri_features.tsv"
+    if out_path.exists():
+        print(f"[run-load-fmri] Skipping — {out_path} already exists")
+        return
+
+    ensure_dir_exist(c, "output_data_dir")
+    smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
+    fmri_type = c.config.get("fmri_input_type", "auto")
+    strategy = c.config.get("fmri_halfpipe_strategy", "36P")
+
+    if smoke:
+        path = smoke_dir / ("halfpipe_output" if fmri_type == "halfpipe" else "fmri_features.tsv")
+    else:
+        path = Path(c.config.get("fmri_halfpipe_dir") if fmri_type == "halfpipe" else c.config.get("fmri_tsv"))
+
+    subjects_list = subjects.split(",") if subjects else None
+    df = load_fmri(path, input_type=fmri_type, strategy=strategy, subjects=subjects_list)
+    df.to_csv(out_path, sep="\t", index=False)
+    print(f"[run-load-fmri] {len(df)} subjects, {len(df.columns) - 1} features → {out_path}")
 
 
 @task
