@@ -27,3 +27,16 @@ fmri_halfpipe_strategy: 36P
 # ── Prediction configuration ──────────────────────────────────────────────────
 # Column from phenotype_file to predict (e.g. "diagnosis", "age", "anxiety_score")
 target_column: diagnosis
+
+# Model: logistic | ridge | elasticnet | svm | random_forest
+model_type: ridge
+
+# Cross-validation folds (outer = evaluation, inner = hyperparameter tuning)
+cv_outer_folds: 5
+cv_inner_folds: 5
+
+# PCA: keep enough components to explain this fraction of variance (per modality)
+pca_variance: 0.95
+
+# Number of permutations for the null distribution (p-value vs chance)
+n_permutations: 100

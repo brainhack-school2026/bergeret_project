@@ -76,8 +76,56 @@ def run_load_fmri(c, subjects=None, smoke=False):
 @task
 def run_predict(c, target=None, smoke=False):
     """Run EEG-only, fMRI-only, and multimodal prediction → output_data/results/"""
-    # TODO: implement — target column is read from invoke.yaml or passed as argument
-    print("TODO: run-predict not yet implemented")
+    from analysis.predict import run_prediction
+    from airoh.utils import ensure_dir_exist
+
+    results_dir = Path(c.config.get("output_data_dir")) / "results"
+    metrics_path = results_dir / "metrics.tsv"
+    if metrics_path.exists():
+        print(f"[run-predict] Skipping — {metrics_path} already exists")
+        return
+
+    ensure_dir_exist(c, "output_data_dir")
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    output_dir = Path(c.config.get("output_data_dir"))
+    eeg_path = output_dir / "eeg_features.tsv"
+    fmri_path = output_dir / "fmri_features.tsv"
+
+    if smoke:
+        smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
+        phenotype_path = smoke_dir / "phenotype.tsv"
+    else:
+        phenotype_path = Path(c.config.get("phenotype_file"))
+
+    import pandas as pd
+    eeg_df = pd.read_csv(eeg_path, sep="\t", dtype={"participant_id": str})
+    fmri_df = pd.read_csv(fmri_path, sep="\t", dtype={"participant_id": str})
+    phenotype_df = pd.read_csv(phenotype_path, sep="\t", dtype={"participant_id": str})
+
+    target_col = target or c.config.get("target_column", "diagnosis")
+    model_type = c.config.get("model_type", "ridge")
+    n_outer = int(c.config.get("cv_outer_folds", 5))
+    n_inner = int(c.config.get("cv_inner_folds", 5))
+    pca_variance = float(c.config.get("pca_variance", 0.95))
+    n_permutations = int(c.config.get("n_permutations", 100))
+
+    metrics_df, fold_df = run_prediction(
+        eeg_df=eeg_df,
+        fmri_df=fmri_df,
+        phenotype_df=phenotype_df,
+        target_col=target_col,
+        model_type=model_type,
+        n_outer=n_outer,
+        n_inner=n_inner,
+        pca_variance=pca_variance,
+        n_permutations=n_permutations,
+    )
+
+    metrics_df.to_csv(metrics_path, sep="\t", index=False)
+    fold_df.to_csv(results_dir / "fold_scores.tsv", sep="\t", index=False)
+    print(f"[run-predict] Done → {metrics_path}")
+    print(metrics_df.to_string(index=False))
 
 
 @task
@@ -107,12 +155,20 @@ def run_smoke(c):
 
 
 @task
+def clean_predict(c):
+    """Remove prediction results from output_data/results/."""
+    results_dir = Path(c.config.get("output_data_dir")) / "results"
+    if results_dir.exists():
+        shutil.rmtree(results_dir)
+        print(f"Removed {results_dir}")
+
+
+@task
 def clean_outputs(c):
-    """Remove analysis outputs from output_data/."""
+    """Remove flat TSV and PNG outputs from output_data/."""
     from airoh.utils import clean_folder
     clean_folder(c, "output_data_dir", "*.tsv")
     clean_folder(c, "output_data_dir", "*.png")
-    clean_folder(c, "output_data_dir", "results")
 
 
 @task
@@ -126,7 +182,7 @@ def clean_smoke(c):
         print("Nothing to clean (source_data/smoke/ does not exist)")
 
 
-@task(pre=[clean_outputs, clean_smoke])
+@task(pre=[clean_outputs, clean_predict, clean_smoke])
 def clean(c):
     """Remove all generated outputs and synthetic smoke data."""
     pass
