@@ -1,153 +1,80 @@
-# Airoh Template: Reproducible Pipelines Made Simple
+# brainhack-2026-multimodal
 
-_why don't you have a cup of relaxing jasmine tea?_
+Reproducible multimodal EEG/fMRI fusion pipeline for psychiatric prediction.
+Built for Brainhack School 2026 using the [`airoh`](https://pypi.org/project/airoh/) task runner.
 
-This repository is a template for structuring a reproducible data analysis. Built on the [`invoke`](https://www.pyinvoke.org/) task runner, it lets you go from clean clone to output figures with just a few commands.
+The pipeline trains separate prediction models on EEG features, fMRI connectivity features,
+and both combined — so you can compare whether one modality, the other, or their fusion
+best predicts a chosen phenotypic target (e.g. diagnosis, age, a clinical score).
 
-The logic is powered by [`airoh`](https://pypi.org/project/airoh/), a lightweight, pip-installable Python package of reusable `invoke` tasks. This repository runs a small demo analysis to show how the template works. It should be easy to adapt to a variety of projects.
-
-**This template is designed to be used with [Claude Code](https://claude.ai/code).** Claude reads the project's `CLAUDE.md` at the start of every session and knows the pipeline conventions — task naming, idempotency, smoke tests — out of the box. To initialize a new project from this template, open Claude Code and run `/init-airoh-project`. The skill will walk you through project setup, fetch/run/clean task implementation, and a smoke test end-to-end.
-
-⚠️ **Status**: This template is in its early days. Expect rapid iteration and changes.
+**Designed to be used with [Claude Code](https://claude.ai/code).** Run `/init-airoh-project`
+in a fresh clone to set up or extend the pipeline.
 
 ---
 
-## ✨ TL;DR:
+## Quick Start
 
-This repository is a [GitHub template](https://github.com/airoh-pipeline/airoh-template/generate). Click **"Use this template"** to create your own analysis project.
 ```bash
 uv sync
-uv run invoke fetch
-uv run invoke run
+uv run invoke run-smoke   # end-to-end test with synthetic data
+uv run invoke run         # full pipeline (requires real data in source_data/)
 ```
-Voilà — from clone to full reproduction.
 
 ---
 
-## 🚀 Quick Start
+## Setup
 
-### **Step 1**: Install dependencies
-
-Using `uv` (recommended):
 ```bash
 uv sync
 ```
-This creates a `.venv` and installs all dependencies from `pyproject.toml`.
-
-Using `pip` (e.g. in a virtual environment):
-```bash
-pip install -r requirements.txt
-```
-
-Using `conda`:
-```bash
-conda env create -n airoh_env -f environment.yml
-conda activate airoh_env
-```
 
 ---
 
-### **Step 2**: Fetch the source data
+## Data inputs
 
-```bash
-invoke fetch
-```
+Place your data files in `source_data/` and configure paths in `invoke.yaml`.
+See [`source_data/CONTENT.md`](source_data/CONTENT.md) for the expected formats.
 
-Downloads the configured file(s) listed under `files:` in `invoke.yaml`.
+The pipeline accepts two input formats for each modality:
 
----
+| Modality | Format A | Format B |
+|---|---|---|
+| EEG | `eeg_features.tsv` (flat table) | `mne_output/` (MNE feature export folder) |
+| fMRI | `fmri_features.tsv` (flat table) | `halfpipe_output/` (Halfpipe connectivity matrices) |
 
-### **Step 3**: Run the full pipeline
-
-```bash
-invoke run
-```
-
-Runs the full analysis pipeline in order. Steps that have already produced output are skipped automatically — only missing outputs are recomputed. To force a full rerun from scratch:
-
-```bash
-invoke clean
-invoke run
-```
+Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"` / `"halfpipe"`.
 
 ---
 
-### **Step 4**: Clean outputs
+## Task Overview
 
-```bash
-invoke clean          # remove all outputs
-invoke clean-{name}   # remove outputs of one specific step
-```
+| Task | Description |
+|---|---|
+| `fetch` | Print instructions for placing real source data |
+| `generate-smoke-data` | Generate lightweight synthetic data for testing |
+| `run-load-eeg` | Load and harmonise EEG features → `output_data/eeg_features.tsv` |
+| `run-load-fmri` | Load and harmonise fMRI connectivity → `output_data/fmri_features.tsv` |
+| `run-predict` | Train and evaluate EEG-only, fMRI-only, and multimodal models |
+| `run-notebooks` | Execute notebooks and save figures to `output_data/` |
+| `run` | Full pipeline (all steps in order) |
+| `run-smoke` | Smoke test: synthetic data + minimal end-to-end pass |
+| `clean` | Remove all generated outputs and synthetic data |
+| `clean-outputs` | Remove analysis outputs only |
+| `clean-smoke` | Remove synthetic smoke data only |
 
----
-
-## 🧠 Design principles
-
-Airoh projects follow a few conventions that keep analyses fast, reproducible, and easy to pick up:
-
-- **Analysis in code, visualization in notebooks.** Heavy computation lives in `analysis/` Python modules and is run by `invoke` tasks. Notebooks only read results and produce figures — so they stay fast.
-- **Idempotent steps.** Each `run-{name}` task checks whether its outputs already exist and skips if they do. You can call `invoke run` repeatedly while working on a later step without re-running earlier ones.
-- **Mirrored clean tasks.** Every `run-{name}` has a matching `clean-{name}` that removes only its outputs. The top-level `clean` calls them all.
-- **Smoke test.** Tasks support a `--smoke` flag for a fast minimal run to verify the pipeline end-to-end.
-
----
-
-## 🧰 Task Overview
-
-| Task             | Description                                              |
-| ---------------- | -------------------------------------------------------- |
-| `fetch`          | Downloads source data configured in `invoke.yaml`        |
-| `run`            | Runs the full pipeline (all `run-{name}` steps in order) |
-| `run-{name}`     | Runs one analysis step; skips if outputs already exist   |
-| `run-notebooks`  | Executes notebooks and saves figures to `output_data/`   |
-| `clean`          | Removes all generated outputs                            |
-| `clean-{name}`   | Removes outputs of one specific step                     |
-
-Use `invoke --list` or `invoke --help <task>` for descriptions and usage.
+Use `invoke --list` or `invoke --help <task>` for details.
 
 ---
 
-## 📁 Folder Structure
+## Output
 
-| Folder / File  | Description                              |
-| -------------- | ---------------------------------------- |
-| `analysis/`    | Pure Python analysis logic, called by invoke tasks |
-| `notebooks/`   | Jupyter notebooks for visualization (one per figure) |
-| `source_data/` | Raw source datasets — see [`source_data/CONTENT.md`](source_data/CONTENT.md) |
-| `output_data/` | Generated results and figures — see [`output_data/CONTENT.md`](output_data/CONTENT.md) |
-| `tasks.py`     | Project-specific invoke tasks            |
-| `invoke.yaml`  | Config: paths, data sources, parameters  |
-
----
-
-## 🧭 Tips
-
-* Use `invoke --complete` for tab-completion support
-* Configure paths and data sources in `invoke.yaml`
-* To use this template for a new project, start from [`airoh-template`](https://github.com/airoh-pipeline/airoh-template) and customize `tasks.py` + `invoke.yaml`
-
----
-
-## 🔁 Want to contribute?
-
-Submit an issue or PR on [`airoh`](https://github.com/SIMEXP/airoh).
+See [`output_data/CONTENT.md`](output_data/CONTENT.md) for a description of all generated files.
 
 ---
 
 ## Philosophy
 
-Inspired by Uncle Iroh from *Avatar: The Last Airbender*, `airoh` aims to bring simplicity, reusability, and clarity to research infrastructure — one well-structured task at a time.
-
-**Core principles:**
-
-- **Reproducibility first.** A pipeline is only useful if someone else — or future you — can run it from scratch and get the same result. Every step is scripted, every dependency declared.
-- **Simple by default, extensible by need.** Three tasks (`fetch`, `run`, `clean`) cover most projects. Add complexity only when the analysis demands it.
-- **Code for analysis, notebooks for figures.** Heavy computation belongs in `analysis/` Python modules. Notebooks are for reading results and producing plots — they should be fast and focused.
-- **Idempotent steps.** Re-running `invoke run` never wastes time. Each step checks whether its outputs exist and skips if they do.
-- **AI-native.** This template is built to be initialized and extended with Claude Code. The `CLAUDE.md` file gives Claude the context it needs to help with the pipeline without needing to re-explain conventions every session.
-
----
-
-### Uncle Airoh
-
-When working in this project, Claude Code responds as **Uncle Airoh**: patient, warm, and wise. Errors are explained gently, tradeoffs are framed as learning opportunities, and a calming cup of jasmine tea is always on offer when things get heated.
+- **Analysis in code, visualization in notebooks.** Heavy computation lives in `analysis/`; notebooks only read results and produce figures.
+- **Idempotent steps.** Each `run-{name}` task skips if outputs already exist. Call `invoke clean` to force a full rerun.
+- **Smoke tests.** `invoke run-smoke` generates synthetic data and runs the full pipeline in seconds.
+- **Two input formats per modality.** Both flat TSVs and raw tool outputs (MNE, Halfpipe) are supported.
