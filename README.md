@@ -54,15 +54,34 @@ Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"
 | `generate-smoke-data` | Generate lightweight synthetic data for testing |
 | `run-load-eeg` | Load and harmonise EEG features → `output_data/eeg_features.tsv` |
 | `run-load-fmri` | Load and harmonise fMRI connectivity → `output_data/fmri_features.tsv` |
-| `run-predict` | Train and evaluate EEG-only, fMRI-only, and multimodal models |
+| `run-predict` | Train and evaluate EEG-only, fMRI-only, and multimodal models → `output_data/results/` |
 | `run-notebooks` | Execute notebooks and save figures to `output_data/` |
 | `run` | Full pipeline (all steps in order) |
 | `run-smoke` | Smoke test: synthetic data + minimal end-to-end pass |
 | `clean` | Remove all generated outputs and synthetic data |
-| `clean-outputs` | Remove analysis outputs only |
-| `clean-smoke` | Remove synthetic smoke data only |
+| `clean-outputs` | Remove flat TSV and PNG outputs from `output_data/` |
+| `clean-predict` | Remove prediction results from `output_data/results/` |
+| `clean-smoke` | Remove synthetic smoke data from `source_data/smoke/` |
 
 Use `invoke --list` or `invoke --help <task>` for details.
+
+---
+
+## Configuration
+
+All settings live in `invoke.yaml`. Key options for the prediction step:
+
+| Key | Default | Description |
+|---|---|---|
+| `target_column` | `diagnosis` | Phenotype column to predict (binary → classification, continuous → regression) |
+| `model_type` | `ridge` | Model: `logistic`, `ridge`, `elasticnet`, `svm`, `random_forest` |
+| `cv_outer_folds` | `5` | Number of outer cross-validation folds (evaluation) |
+| `cv_inner_folds` | `5` | Number of inner folds (hyperparameter tuning) |
+| `pca_variance` | `0.95` | Fraction of variance retained by PCA per modality |
+| `n_permutations` | `100` | Number of permutations for the null distribution (p-value vs chance) |
+| `eeg_input_type` | `tsv` | EEG input format: `tsv` or `mne` |
+| `fmri_input_type` | `tsv` | fMRI input format: `tsv` or `halfpipe` |
+| `fmri_halfpipe_strategy` | `36P` | Halfpipe denoising strategy tag (e.g. `36P`, `aCompCor`) |
 
 ---
 
