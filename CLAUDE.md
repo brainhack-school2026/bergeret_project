@@ -62,7 +62,7 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 | `run-load-eeg` | TSV or MNE folder | `output_data/eeg_features.tsv` | `analysis/load_eeg.py` |
 | `run-load-fmri` | TSV or Halfpipe folder | `output_data/fmri_features.tsv` | `analysis/load_fmri.py` |
 | `run-predict` | both feature TSVs + phenotype | `output_data/results/metrics.tsv`, `fold_scores.tsv` | `analysis/predict.py` |
-| `run-notebooks` | `output_data/` | figures in `output_data/` | `notebooks/` |
+| `run-notebooks` | `output_data/results/` | `output_data/scores_by_condition.png`, `fold_distribution.png` | `notebooks/results_overview.ipynb` |
 
 **Cleaning tasks:** `clean-outputs` removes flat TSVs and PNGs; `clean-predict` removes `output_data/results/`; `clean-smoke` removes `source_data/smoke/`. The top-level `clean` calls all three.
 
@@ -85,6 +85,15 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 **Outputs:**
 - `output_data/results/metrics.tsv` — one row per condition: mean/std scores, `p_vs_chance`, paired p-values.
 - `output_data/results/fold_scores.tsv` — raw per-fold scores in long format.
+
+## Notebooks
+
+`notebooks/results_overview.ipynb` reads `output_data/results/` and produces two figures:
+- `scores_by_condition.png` — bar chart (mean ± std) with per-fold overlay and p-vs-chance annotations.
+- `fold_distribution.png` — violin plot of per-fold score distribution per condition.
+- A significance summary cell prints p-values (vs chance + paired t-tests) with star notation.
+
+Notebooks receive `OUTPUT_DATA_DIR` and `SOURCE_DATA_DIR` as environment variables (injected by `airoh.utils.run_notebooks`). All heavy computation must remain in `analysis/` — notebooks are visualization only.
 
 ## Architecture
 

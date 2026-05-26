@@ -89,6 +89,12 @@ All settings live in `invoke.yaml`. Key options for the prediction step:
 
 See [`output_data/CONTENT.md`](output_data/CONTENT.md) for a description of all generated files.
 
+### Notebooks
+
+| Notebook | Description | Figures produced |
+|---|---|---|
+| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition.png` (bar + fold overlay, p-value annotations), `fold_distribution.png` (violin per condition) |
+
 ---
 
 ## Philosophy
