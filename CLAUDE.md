@@ -14,7 +14,7 @@ This is **brainhack-2026-multimodal** — a reproducible multimodal EEG/fMRI fus
 
 **Chunk concept:** subjects (`participant_id`) are the unit of processing.
 
-**Smoke data:** `invoke generate-smoke-data` populates `source_data/smoke/` with 15 synthetic subjects in all four input formats. `invoke run-smoke` uses this data to test the pipeline end-to-end.
+**Smoke data:** `invoke generate-smoke-data` populates `source_data/smoke/` with 30 synthetic subjects in all four input formats. `invoke run-smoke` uses this data to test the pipeline end-to-end. The synthetic data includes ~2% NaN (sparse values + deliberately all-NaN columns), one subject with missing age (exercises confound-drop in `run_intersect`), and two independent latent signals so both `diagnosis` and `gender` targets are weakly predictable even after confound correction.
 
 ## Persona
 
@@ -67,26 +67,31 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 
 **Cleaning tasks:** `clean-intersect` removes `subjects.txt`; `clean-outputs` removes flat TSVs and PNGs; `clean-predict` removes `output_data/results/`; `clean-smoke` removes `source_data/smoke/`. The top-level `clean` calls all four.
 
-**Subject intersection:** `run-intersect` reads only subject IDs (not features) from each source — directory listing for MNE/Halfpipe, `participant_id` column for TSVs — and writes the common set to `output_data/subjects.txt`. Both `run-load-eeg` and `run-load-fmri` have `pre=[run_intersect]` so the intersection always runs first, avoiding loading data for subjects that would be dropped anyway.
+**Subject intersection:** `run-intersect` reads only subject IDs (not features) from each source — directory listing for MNE/Halfpipe, `participant_id` column for TSVs — and writes the common set to `output_data/subjects.txt`. It also reads the phenotype file and drops subjects that have missing values in any confound column (`age`, `gender`, `study_site`, excluding the target). This ensures subjects with incomplete confounds never reach `correct_confounds`, where a single NaN row would silently corrupt the entire residual matrix. Both `run-load-eeg` and `run-load-fmri` have `pre=[run_intersect]` so the intersection always runs first.
 
 ## Prediction pipeline (`analysis/predict.py`)
 
 `run_prediction()` is the main entry point. It executes three conditions — EEG-only, fMRI-only, multimodal — with identical methodology:
 
 1. **Subject alignment** — keep only subjects present in all three inputs (EEG, fMRI, phenotype).
-2. **Task detection** — binary/low-cardinality integer target → classification (balanced accuracy); continuous → regression (MAE, R², Pearson r).
-3. **GLM confound correction** — OLS regression of `age`, `gender`, `study_site` out of features; the target column is never used as a confound.
-4. **Nested cross-validation** — outer k-fold for generalisation, inner k-fold for hyperparameter tuning. Inside each outer fold:
-   - PCA fitted on the training split only (retains `pca_variance` fraction of variance).
-   - `GridSearchCV` on the inner splits selects the best hyperparameters.
+2. **Task detection** — binary/low-cardinality integer target → classification; continuous → regression.
+3. **GLM confound correction** — OLS regression of `age`, `gender`, `study_site` out of features; the target column is never used as a confound. Subjects with missing confound values are excluded upstream in `run-intersect`.
+4. **NaN handling** — before entering the CV loop, `load_eeg` and `load_fmri` both drop all-NaN feature columns and median-impute remaining sparse NaN at the group level.
+5. **Nested cross-validation** — outer k-fold for generalisation, inner k-fold for hyperparameter tuning. Inside each outer fold:
+   - `SimpleImputer` (median) → PCA (fitted on training split only) → `StandardScaler` → model.
+   - `GridSearchCV` on inner splits optimises **AUC** for classification, **neg-MAE** for regression.
    - Best model evaluated on the held-out outer fold.
-5. **Permutation test** — `n_permutations` shuffles of `y` build a null distribution; p-value = fraction of null scores ≥ observed.
-6. **Paired t-tests** — fold-level scores compared between EEG-only vs fMRI-only, EEG-only vs multimodal, fMRI-only vs multimodal.
+6. **Permutation test** — `n_permutations` shuffles of `y` build a null distribution; p-value = fraction of null scores ≥ observed (primary metric: AUC for classification, Pearson r for regression).
+7. **Paired t-tests** — fold-level scores compared between EEG-only vs fMRI-only, EEG-only vs multimodal, fMRI-only vs multimodal.
+
+**Primary metrics:**
+- Classification: `roc_auc` (AUC-ROC). `balanced_accuracy` is also reported.
+- Regression: `pearson_r` (used for permutation tests). `mae` and `r2` also reported.
 
 **Supported models** (`model_type` in `invoke.yaml`): `logistic`, `ridge`, `elasticnet`, `svm`, `random_forest`. For regression targets, `logistic` maps to `Ridge`.
 
 **Outputs:**
-- `output_data/results/metrics.tsv` — one row per condition: mean/std scores, `p_vs_chance`, paired p-values.
+- `output_data/results/metrics.tsv` — one row per condition: mean/std for all metrics, `p_vs_chance`, paired p-values.
 - `output_data/results/fold_scores.tsv` — raw per-fold scores in long format.
 
 ## Notebooks
