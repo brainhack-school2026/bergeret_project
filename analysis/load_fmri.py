@@ -74,7 +74,11 @@ def load_fmri_halfpipe(
     if subjects:
         sub_dirs = [d for d in sub_dirs if d.name in subjects]
 
-    for sub_dir in sub_dirs:
+    n_total = len(sub_dirs)
+    print(f"[load-fmri] {n_total} subject directories found — loading feature '{strategy}' ...")
+    next_milestone = 10
+
+    for idx, sub_dir in enumerate(sub_dirs):
         sub_id = sub_dir.name
         run_files = sorted(
             sub_dir.glob(f"**/task-rest/*_feature-{strategy}_*_desc-correlation_matrix.tsv")
@@ -96,6 +100,11 @@ def load_fmri_halfpipe(
         col_names = [f"corr_{i + 1}_{j + 1}" for i, j in zip(idx_i, idx_j)]
 
         records.append({"participant_id": sub_id, **dict(zip(col_names, upper))})
+
+        pct_done = 100 * (idx + 1) / n_total
+        if pct_done >= next_milestone:
+            print(f"[load-fmri] {int(pct_done)}% ({idx + 1}/{n_total} subjects processed)")
+            next_milestone += 10
 
     if not records:
         raise ValueError(
