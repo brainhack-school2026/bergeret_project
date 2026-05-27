@@ -1,5 +1,20 @@
 # brainhack-2026-multimodal
 
+<a href="https://github.com/pbergeret12">
+  <img src="https://avatars.githubusercontent.com/u/81371004?v=4&s=100" width="100px;" alt=""/>
+  <br /><sub><b>Pierre Bergeret</b></sub>
+</a>
+
+### About Me
+
+PhD Student in Psychiatry at the Université de Montréal specialized in neuroimaging analysis.
+
+### Project slides
+
+https://docs.google.com/presentation/d/1ZMddc8o5beXn3dZDECPOYwVRuh-DVODSOPS99YFSp7M/edit?slide=id.p#slide=id.p
+
+---
+
 Reproducible multimodal EEG/fMRI fusion pipeline for psychiatric prediction.
 Built for Brainhack School 2026 using the [`airoh`](https://pypi.org/project/airoh/) task runner.
 
