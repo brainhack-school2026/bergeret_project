@@ -21,7 +21,7 @@ Built for Brainhack School 2026 using the [`airoh`](https://pypi.org/project/air
 The pipeline trains separate prediction models on EEG features, fMRI connectivity features,
 and both combined — so you can compare whether one modality, the other, or their fusion
 best predicts a chosen phenotypic target (e.g. diagnosis, age, a clinical score).
-Primary metric is **AUC-ROC** for classification and **Pearson r** for regression.
+Primary metric is **AUC-ROC** for classification and **MAE** for regression.
 
 **Designed to be used with [Claude Code](https://claude.ai/code).** Run `/init-airoh-project`
 in a fresh clone to set up or extend the pipeline.

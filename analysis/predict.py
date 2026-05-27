@@ -265,7 +265,12 @@ def _permutation_test(
     primary_metric: str,
     random_state: int = 0,
 ) -> float:
-    """Return p-value: fraction of permuted scores ≥ observed score."""
+    """Return p-value vs chance.
+
+    For metrics where higher is better (AUC, Pearson r): fraction of null scores >= observed.
+    For metrics where lower is better (MAE): fraction of null scores <= observed.
+    """
+    lower_is_better = primary_metric == "mae"
     rng = np.random.default_rng(random_state)
     observed_folds = _run_nested_cv(X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state)
     observed = np.mean([f[primary_metric] for f in observed_folds])
@@ -278,7 +283,11 @@ def _permutation_test(
         )
         null_scores.append(np.mean([f[primary_metric] for f in perm_folds]))
 
-    p_value = (np.sum(np.array(null_scores) >= observed) + 1) / (n_permutations + 1)
+    null_arr = np.array(null_scores)
+    if lower_is_better:
+        p_value = (np.sum(null_arr <= observed) + 1) / (n_permutations + 1)
+    else:
+        p_value = (np.sum(null_arr >= observed) + 1) / (n_permutations + 1)
     return p_value
 
 
@@ -324,7 +333,7 @@ def run_prediction(
     # Keep strings as-is for classification (sklearn handles them); cast to float for regression
     y = y_series.values if task_type == "classification" else y_series.values.astype(float)
     print(f"[predict] Task type: {task_type} | Target: {target_col} | Model: {model_type}")
-    primary_metric = "roc_auc" if task_type == "classification" else "pearson_r"
+    primary_metric = "roc_auc" if task_type == "classification" else "mae"
 
     # ── confound correction ─────────────────────────────────────────────────
     eeg_corrected = correct_confounds(eeg_df, phenotype_df, target_col)

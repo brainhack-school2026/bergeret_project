@@ -86,7 +86,7 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 
 **Primary metrics:**
 - Classification: `roc_auc` (AUC-ROC). `balanced_accuracy` is also reported.
-- Regression: `pearson_r` (used for permutation tests). `mae` and `r2` also reported.
+- Regression: `mae` (used for permutation tests and figures). `pearson_r` and `r2` also reported. For MAE the permutation p-value counts null scores ≤ observed (lower is better).
 
 **Supported models** (`model_type` in `invoke.yaml`): `logistic`, `ridge`, `elasticnet`, `svm`, `random_forest`. For regression targets, `logistic` maps to `Ridge`.
 
