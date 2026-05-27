@@ -83,7 +83,7 @@ def load_fmri_halfpipe(
             print(f"[load-fmri] Skipping {sub_id}: no files for feature '{strategy}'")
             continue
 
-        matrices = [np.loadtxt(f, delimiter="\t") for f in run_files]
+        matrices = [np.loadtxt(f, delimiter="\t", dtype=np.float32) for f in run_files]
 
         # NaN-aware run merging: nanmean returns NaN only when all inputs are NaN
         with warnings.catch_warnings():
