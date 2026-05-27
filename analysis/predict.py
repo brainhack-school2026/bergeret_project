@@ -384,8 +384,12 @@ def run_prediction(
     ]
     paired_pvalues = {}
     for a, b in pairs:
-        _, p = stats.ttest_rel(_primary_scores(a), _primary_scores(b))
-        paired_pvalues[f"{a}_vs_{b}"] = p
+        diffs = _primary_scores(a) - _primary_scores(b)
+        if np.std(diffs) == 0:
+            paired_pvalues[f"{a}_vs_{b}"] = 1.0
+        else:
+            _, p = stats.ttest_rel(_primary_scores(a), _primary_scores(b))
+            paired_pvalues[f"{a}_vs_{b}"] = p
 
     # ── build metrics table ─────────────────────────────────────────────────
     metric_rows = []
