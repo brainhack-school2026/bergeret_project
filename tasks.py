@@ -58,13 +58,31 @@ def run_intersect(c, smoke=False):
 
     # Phenotype subjects
     phenotype_path = smoke_dir / "phenotype.tsv" if smoke else Path(c.config.get("phenotype_file"))
-    phenotype_ids = ids_from_tsv(phenotype_path)
+    phenotype_df = pd.read_csv(phenotype_path, sep="\t", dtype={"participant_id": str})
+    phenotype_ids = set(phenotype_df["participant_id"])
 
     common = sorted(eeg_ids & fmri_ids & phenotype_ids)
+
+    # Drop subjects with missing values in confound columns (age, gender, study_site)
+    target_col = c.config.get("target_column", "diagnosis")
+    confound_cols = [col for col in ("age", "gender", "study_site") if col != target_col]
+    available_confounds = [col for col in confound_cols if col in phenotype_df.columns]
+    if available_confounds:
+        pheno_common = phenotype_df[phenotype_df["participant_id"].isin(common)]
+        missing_mask = pheno_common[available_confounds].isna().any(axis=1)
+        n_dropped = int(missing_mask.sum())
+        if n_dropped:
+            dropped_ids = set(pheno_common.loc[missing_mask, "participant_id"])
+            common = [s for s in common if s not in dropped_ids]
+            print(
+                f"[run-intersect] Dropped {n_dropped} subjects with missing confound values "
+                f"({', '.join(available_confounds)}) → {len(common)} subjects remaining"
+            )
+
     out_path.write_text("\n".join(common))
     print(
         f"[run-intersect] EEG: {len(eeg_ids)} | fMRI: {len(fmri_ids)} | phenotype: {len(phenotype_ids)}"
-        f" → {len(common)} subjects in common → {out_path}"
+        f" → {len(common)} subjects with complete data → {out_path}"
     )
 
 
