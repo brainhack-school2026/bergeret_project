@@ -26,6 +26,7 @@ Produces all four input formats the pipeline accepts:
 """
 
 import json
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -50,8 +51,8 @@ _N_ALL_NAN_EEG = 2    # entirely-NaN columns in EEG TSV
 _N_ALL_NAN_FMRI = 3   # entirely-NaN columns in fMRI TSV
 _SPARSE_NAN_RATE = 0.010  # sparse NaN on top of all-NaN columns → ~2% total
 
-_NAN_ROI_PAIRS = [(2, 5), (10, 14)]   # ROI pairs set to NaN in Halfpipe matrices
-_NAN_HALFPIPE_N = 3                    # first N subjects get NaN ROI pairs
+_NAN_ROIS = [2, 10]      # ROI indices with no coverage → entire timeseries column is NaN
+_NAN_HALFPIPE_N = 3     # first N subjects get NaN ROIs
 
 
 def _subject_ids(n):
@@ -233,15 +234,16 @@ def generate_halfpipe_output(out_dir, n_subjects=N_SUBJECTS, strategies=None, se
         task_dir = halfpipe_dir / sub_id / "ses-1" / "func" / "task-rest"
         task_dir.mkdir(parents=True, exist_ok=True)
         n_runs = 2 if i < 5 else 1
-        nan_pairs = _NAN_ROI_PAIRS if i < _NAN_HALFPIPE_N else None
+        nan_rois = _NAN_ROIS if i < _NAN_HALFPIPE_N else None
         for strategy in strategies:
             for run in range(1, n_runs + 1):
                 ts = _make_timeseries(rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i])
-                corr_mat = _corr_from_timeseries(ts)
-                if nan_pairs:
-                    for ri, rj in nan_pairs:
-                        corr_mat[ri, rj] = np.nan
-                        corr_mat[rj, ri] = np.nan
+                if nan_rois:
+                    ts[:, nan_rois] = np.nan  # simulate ROIs with no coverage
+                # NaN in corr_mat propagates naturally from NaN timeseries columns
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    corr_mat = _corr_from_timeseries(ts)
 
                 base = (
                     f"{sub_id}_ses-1_task-rest_run-{run}"
