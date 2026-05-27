@@ -25,6 +25,8 @@ Produces all four input formats the pipeline accepts:
                         subjects 1–3: NaN ROI pairs (group-imputation path)
 """
 
+import json
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -32,6 +34,10 @@ from pathlib import Path
 N_SUBJECTS = 30
 N_ROIS = 25
 N_CONNECTIVITY = N_ROIS * (N_ROIS - 1) // 2  # 300
+N_TIMEPOINTS = 200  # timepoints per run in Halfpipe output
+
+# ROI labels used as column headers in timeseries TSVs
+_ROI_NAMES = [f"SynthAtlas_{i + 1:03d}" for i in range(N_ROIS)]
 
 # EEG: 5 frequency bands × 10 standard 10-20 channels = 50 features
 _EEG_CHANNELS = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4", "O1", "O2"]
@@ -86,16 +92,23 @@ def _add_sparse_nan(rng, X, rate):
     return flat.reshape(X.shape)
 
 
-def _make_connectivity_matrix(rng, signal_i, nan_roi_pairs=None):
-    raw = rng.uniform(-0.3, 0.3, (N_ROIS, N_ROIS)) + 0.12 * signal_i
-    sym = (raw + raw.T) / 2
-    np.fill_diagonal(sym, 1.0)
-    mat = np.clip(sym, -1.0, 1.0)
-    if nan_roi_pairs:
-        for i, j in nan_roi_pairs:
-            mat[i, j] = np.nan
-            mat[j, i] = np.nan
-    return mat
+def _make_timeseries(rng, signal_i):
+    """
+    Generate a N_TIMEPOINTS × N_ROIS timeseries.
+    signal_i modulates the strength of the shared network component,
+    producing signal-dependent ROI-ROI correlations.
+    """
+    noise = rng.standard_normal((N_TIMEPOINTS, N_ROIS))
+    # Dominant network mode: one shared timeseries drives all ROIs
+    shared = rng.standard_normal(N_TIMEPOINTS)
+    roi_loadings = rng.uniform(0.3, 0.7, N_ROIS)
+    network_strength = np.clip(0.5 + 0.14 * signal_i, 0.1, 2.0)
+    return noise + network_strength * np.outer(shared, roi_loadings)
+
+
+def _corr_from_timeseries(timeseries):
+    """Pearson correlation matrix (N_ROIS × N_ROIS) — values always in [-1, 1]."""
+    return np.corrcoef(timeseries.T)
 
 
 def generate_phenotype(out_dir, n_subjects=N_SUBJECTS, seed=42):
@@ -180,10 +193,12 @@ def generate_fmri_tsv(out_dir, n_subjects=N_SUBJECTS, seed=42):
     sig_g = _signal_gender(n_subjects, seed)
     col_names = _connectivity_col_names()
 
-    rows = np.array([
-        _make_connectivity_matrix(rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i])[np.triu_indices(N_ROIS, k=1)]
-        for i in range(n_subjects)
-    ], dtype=float)
+    rows = []
+    for i in range(n_subjects):
+        ts = _make_timeseries(rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i])
+        corr = _corr_from_timeseries(ts)
+        rows.append(corr[np.triu_indices(N_ROIS, k=1)])
+    rows = np.array(rows, dtype=float)
 
     rows = _add_sparse_nan(rng, rows, _SPARSE_NAN_RATE)
     all_nan_cols = rng.choice(len(col_names), size=_N_ALL_NAN_FMRI, replace=False)
@@ -221,14 +236,40 @@ def generate_halfpipe_output(out_dir, n_subjects=N_SUBJECTS, strategies=None, se
         nan_pairs = _NAN_ROI_PAIRS if i < _NAN_HALFPIPE_N else None
         for strategy in strategies:
             for run in range(1, n_runs + 1):
-                mat = _make_connectivity_matrix(
-                    rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i], nan_roi_pairs=nan_pairs
-                )
-                fname = (
+                ts = _make_timeseries(rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i])
+                corr_mat = _corr_from_timeseries(ts)
+                if nan_pairs:
+                    for ri, rj in nan_pairs:
+                        corr_mat[ri, rj] = np.nan
+                        corr_mat[rj, ri] = np.nan
+
+                base = (
                     f"{sub_id}_ses-1_task-rest_run-{run}"
-                    f"_feature-{strategy}_atlas-SynthAtlas_desc-correlation_matrix.tsv"
+                    f"_feature-{strategy}_atlas-SynthAtlas"
                 )
-                np.savetxt(task_dir / fname, mat, delimiter="\t")
+                pd.DataFrame(ts, columns=_ROI_NAMES).to_csv(
+                    task_dir / f"{base}_timeseries.tsv", sep="\t", index=False
+                )
+                mean_fd = float(rng.uniform(0.05, 0.35))
+                max_fd = float(mean_fd + rng.uniform(0.1, 0.6))
+                fd_perc = float(rng.uniform(0.0, 0.15))
+                with open(task_dir / f"{base}_timeseries.json", "w") as f:
+                    json.dump(
+                        {
+                            "mean_fd": round(mean_fd, 4),
+                            "max_fd": round(max_fd, 4),
+                            "fd_perc": round(fd_perc, 4),
+                            "n_timepoints": N_TIMEPOINTS,
+                            "tr": 0.8,
+                        },
+                        f,
+                        indent=2,
+                    )
+                np.savetxt(
+                    task_dir / f"{base}_desc-correlation_matrix.tsv",
+                    corr_mat,
+                    delimiter="\t",
+                )
 
 
 def generate_all(out_dir, n_subjects=N_SUBJECTS, strategies=None, seed=42):
