@@ -13,7 +13,7 @@ def fetch(c):
 
 
 @task
-def generate_smoke_data(c, n_subjects=15, strategies="36P"):
+def generate_smoke_data(c, n_subjects=30, strategies="36P"):
     """Generate lightweight synthetic data for smoke testing into source_data/smoke/."""
     from analysis.generate_synthetic import generate_all
     out_dir = Path(c.config.get("source_data_dir")) / "smoke"
