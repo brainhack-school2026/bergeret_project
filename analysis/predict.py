@@ -38,7 +38,7 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import ElasticNet, LogisticRegression, Ridge
-from sklearn.metrics import balanced_accuracy_score, mean_absolute_error, r2_score
+from sklearn.metrics import balanced_accuracy_score, mean_absolute_error, r2_score, roc_auc_score
 from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -163,13 +163,22 @@ def correct_confounds(
 
 # ── nested cross-validation ─────────────────────────────────────────────────
 
-def _score(y_true, y_pred, task_type: str) -> dict:
+def _score(y_true, y_pred, task_type: str, y_score=None) -> dict:
     if task_type == "classification":
-        return {
-            "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
-        }
+        scores = {"balanced_accuracy": balanced_accuracy_score(y_true, y_pred)}
+        if y_score is not None:
+            try:
+                classes = np.unique(y_true)
+                if len(classes) == 2:
+                    auc = roc_auc_score(y_true, y_score[:, 1] if y_score.ndim == 2 else y_score)
+                else:
+                    auc = roc_auc_score(y_true, y_score, multi_class="ovr", average="macro")
+                scores["roc_auc"] = auc
+            except Exception:
+                scores["roc_auc"] = float("nan")
+        return scores
     else:
-        r, p = stats.pearsonr(y_true, y_pred)
+        r, _ = stats.pearsonr(y_true, y_pred)
         return {
             "mae": mean_absolute_error(y_true, y_pred),
             "r2": r2_score(y_true, y_pred),
@@ -229,14 +238,15 @@ def _run_nested_cv(
                 pipe,
                 param_grid,
                 cv=inner_cv,
-                scoring="balanced_accuracy" if is_clf else "neg_mean_absolute_error",
+                scoring="roc_auc" if is_clf else "neg_mean_absolute_error",
                 n_jobs=-1,
                 refit=True,
             )
             gs.fit(X_tr_pca, y_tr)
 
         y_pred = gs.predict(X_te_pca)
-        fold_scores.append(_score(y_te, y_pred, task_type))
+        y_score = gs.predict_proba(X_te_pca) if is_clf and hasattr(gs, "predict_proba") else None
+        fold_scores.append(_score(y_te, y_pred, task_type, y_score=y_score))
 
     return fold_scores
 
@@ -314,7 +324,7 @@ def run_prediction(
     # Keep strings as-is for classification (sklearn handles them); cast to float for regression
     y = y_series.values if task_type == "classification" else y_series.values.astype(float)
     print(f"[predict] Task type: {task_type} | Target: {target_col} | Model: {model_type}")
-    primary_metric = "balanced_accuracy" if task_type == "classification" else "pearson_r"
+    primary_metric = "roc_auc" if task_type == "classification" else "pearson_r"
 
     # ── confound correction ─────────────────────────────────────────────────
     eeg_corrected = correct_confounds(eeg_df, phenotype_df, target_col)
