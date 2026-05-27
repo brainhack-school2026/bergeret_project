@@ -21,6 +21,62 @@ def generate_smoke_data(c, n_subjects=15, strategies="36P"):
 
 
 @task
+def run_intersect(c, smoke=False):
+    """Compute subject intersection across EEG, fMRI, and phenotype → output_data/subjects.txt"""
+    import pandas as pd
+    from airoh.utils import ensure_dir_exist
+
+    out_path = Path(c.config.get("output_data_dir")) / "subjects.txt"
+    if out_path.exists():
+        print(f"[run-intersect] Skipping — {out_path} already exists")
+        return
+
+    ensure_dir_exist(c, "output_data_dir")
+    smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
+    eeg_type = c.config.get("eeg_input_type", "auto")
+    fmri_type = c.config.get("fmri_input_type", "auto")
+
+    def ids_from_tsv(path):
+        return set(pd.read_csv(path, sep="\t", usecols=["participant_id"], dtype=str)["participant_id"])
+
+    def ids_from_dir(path):
+        return {d.name for d in Path(path).iterdir() if d.is_dir()}
+
+    # EEG subjects
+    if smoke:
+        eeg_path = smoke_dir / ("mne_output" if eeg_type == "mne" else "eeg_features.tsv")
+    else:
+        eeg_path = Path(c.config.get("eeg_mne_dir") if eeg_type == "mne" else c.config.get("eeg_tsv"))
+    eeg_ids = ids_from_dir(eeg_path) if eeg_path.is_dir() else ids_from_tsv(eeg_path)
+
+    # fMRI subjects
+    if smoke:
+        fmri_path = smoke_dir / ("halfpipe_output" if fmri_type == "halfpipe" else "fmri_features.tsv")
+    else:
+        fmri_path = Path(c.config.get("fmri_halfpipe_dir") if fmri_type == "halfpipe" else c.config.get("fmri_tsv"))
+    fmri_ids = ids_from_dir(fmri_path) if fmri_path.is_dir() else ids_from_tsv(fmri_path)
+
+    # Phenotype subjects
+    phenotype_path = smoke_dir / "phenotype.tsv" if smoke else Path(c.config.get("phenotype_file"))
+    phenotype_ids = ids_from_tsv(phenotype_path)
+
+    common = sorted(eeg_ids & fmri_ids & phenotype_ids)
+    out_path.write_text("\n".join(common))
+    print(
+        f"[run-intersect] EEG: {len(eeg_ids)} | fMRI: {len(fmri_ids)} | phenotype: {len(phenotype_ids)}"
+        f" → {len(common)} subjects in common → {out_path}"
+    )
+
+
+def _load_subjects(output_data_dir: Path) -> list[str] | None:
+    """Read subjects.txt if it exists, else return None (load all)."""
+    path = output_data_dir / "subjects.txt"
+    if path.exists():
+        return [s for s in path.read_text().splitlines() if s]
+    return None
+
+
+@task(pre=[run_intersect])
 def run_load_eeg(c, subjects=None, smoke=False):
     """Load EEG features (TSV or MNE folder) → output_data/eeg_features.tsv"""
     from analysis.load_eeg import load_eeg
@@ -40,13 +96,14 @@ def run_load_eeg(c, subjects=None, smoke=False):
     else:
         path = Path(c.config.get("eeg_mne_dir") if eeg_type == "mne" else c.config.get("eeg_tsv"))
 
-    subjects_list = subjects.split(",") if subjects else None
+    output_data_dir = Path(c.config.get("output_data_dir"))
+    subjects_list = subjects.split(",") if subjects else _load_subjects(output_data_dir)
     df = load_eeg(path, input_type=eeg_type, subjects=subjects_list)
     df.to_csv(out_path, sep="\t", index=False)
     print(f"[run-load-eeg] {len(df)} subjects, {len(df.columns) - 1} features → {out_path}")
 
 
-@task
+@task(pre=[run_intersect])
 def run_load_fmri(c, subjects=None, smoke=False):
     """Load fMRI connectivity (TSV or Halfpipe folder) → output_data/fmri_features.tsv"""
     from analysis.load_fmri import load_fmri
@@ -67,7 +124,8 @@ def run_load_fmri(c, subjects=None, smoke=False):
     else:
         path = Path(c.config.get("fmri_halfpipe_dir") if fmri_type == "halfpipe" else c.config.get("fmri_tsv"))
 
-    subjects_list = subjects.split(",") if subjects else None
+    output_data_dir = Path(c.config.get("output_data_dir"))
+    subjects_list = subjects.split(",") if subjects else _load_subjects(output_data_dir)
     df = load_fmri(path, input_type=fmri_type, strategy=strategy, subjects=subjects_list)
     df.to_csv(out_path, sep="\t", index=False)
     print(f"[run-load-fmri] {len(df)} subjects, {len(df.columns) - 1} features → {out_path}")
@@ -138,9 +196,9 @@ def run_notebooks(c):
     airoh_run_notebooks(c, notebooks_dir, output_dir, keys=["source_data_dir", "output_data_dir"])
 
 
-@task(pre=[fetch, run_load_eeg, run_load_fmri, run_predict, run_notebooks])
+@task(pre=[fetch, run_intersect, run_load_eeg, run_load_fmri, run_predict, run_notebooks])
 def run(c):
-    """Full pipeline: fetch → load EEG → load fMRI → predict → notebooks."""
+    """Full pipeline: fetch → intersect → load EEG → load fMRI → predict → notebooks."""
     print("Pipeline complete.")
 
 
@@ -148,6 +206,7 @@ def run(c):
 def run_smoke(c):
     """Smoke test: generate synthetic data and run minimal end-to-end pipeline."""
     generate_smoke_data(c)
+    run_intersect(c, smoke=True)
     run_load_eeg(c, smoke=True)
     run_load_fmri(c, smoke=True)
     run_predict(c, smoke=True)
@@ -161,6 +220,15 @@ def clean_predict(c):
     if results_dir.exists():
         shutil.rmtree(results_dir)
         print(f"Removed {results_dir}")
+
+
+@task
+def clean_intersect(c):
+    """Remove subject intersection file from output_data/."""
+    path = Path(c.config.get("output_data_dir")) / "subjects.txt"
+    if path.exists():
+        path.unlink()
+        print(f"Removed {path}")
 
 
 @task
@@ -182,7 +250,7 @@ def clean_smoke(c):
         print("Nothing to clean (source_data/smoke/ does not exist)")
 
 
-@task(pre=[clean_outputs, clean_predict, clean_smoke])
+@task(pre=[clean_intersect, clean_outputs, clean_predict, clean_smoke])
 def clean(c):
     """Remove all generated outputs and synthetic smoke data."""
     pass
