@@ -22,7 +22,8 @@ eeg_mne_dir: source_data/mne_output
 fmri_input_type: tsv
 fmri_tsv: source_data/fmri_features.tsv
 fmri_halfpipe_dir: source_data/halfpipe_output
-fmri_halfpipe_strategy: 36P
+# Halfpipe denoising strategy = value of the feature- BIDS tag (e.g. Baseline, 36P, aCompCor)
+fmri_halfpipe_strategy: Baseline
 
 # ── Prediction configuration ──────────────────────────────────────────────────
 # Column from phenotype_file to predict (e.g. "diagnosis", "age", "anxiety_score")

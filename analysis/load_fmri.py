@@ -7,10 +7,17 @@ if it is a file, TSV mode is used.
 TSV format:
     participant_id  corr_1_2  corr_1_3  ...
 
-Halfpipe format:
-    {halfpipe_dir}/{sub_id}/func/{sub_id}_task-rest_run-{n}_desc-{strategy}_matrix.tsv
-    - Each file is a raw NxN connectivity matrix (no header, tab-separated)
-    - Multiple runs per subject are averaged before extracting the upper triangle
+Halfpipe format (BIDS derivatives):
+    {halfpipe_dir}/sub-{id}/ses-{ses}/func/task-rest/
+        sub-{id}_ses-{ses}_task-rest_run-{n}_feature-{strategy}_atlas-{atlas}_desc-correlation_matrix.tsv
+
+    - `desc-correlation` is always the matrix type (fixed by Halfpipe)
+    - `feature-` is the denoising strategy tag (e.g. 'Baseline', '36P', 'aCompCor')
+      → this is what `fmri_halfpipe_strategy` selects
+    - `atlas-` is ignored: all atlases matching the strategy are averaged
+    - No header (raw tab-separated numbers), consistent with wonkyconn has_header=False
+    - Multiple runs and/or sessions per subject are averaged before extracting
+      the upper triangle
     - Output columns are named corr_i_j with 1-based integer ROI indices
 """
 
@@ -63,14 +70,11 @@ def load_fmri_halfpipe(
 
     for sub_dir in sub_dirs:
         sub_id = sub_dir.name
-        func_dir = sub_dir / "func"
-        if not func_dir.exists():
-            print(f"[load-fmri] Skipping {sub_id}: no func/ directory")
-            continue
-
-        run_files = sorted(func_dir.glob(f"*_desc-{strategy}_matrix.tsv"))
+        # Halfpipe BIDS layout: ses-*/func/task-rest/*_feature-{strategy}_*_desc-correlation_matrix.tsv
+        # Use ** to handle any session depth; desc-correlation is always fixed for Halfpipe matrices
+        run_files = sorted(sub_dir.glob(f"**/task-rest/*_feature-{strategy}_*_desc-correlation_matrix.tsv"))
         if not run_files:
-            print(f"[load-fmri] Skipping {sub_id}: no files for strategy '{strategy}'")
+            print(f"[load-fmri] Skipping {sub_id}: no files for feature '{strategy}'")
             continue
 
         # Load each run matrix (no header — raw numbers only)
