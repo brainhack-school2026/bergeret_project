@@ -16,9 +16,18 @@ in a fresh clone to set up or extend the pipeline.
 ## Quick Start
 
 ```bash
+# 1. Install dependencies
 uv sync
-uv run invoke run-smoke   # end-to-end test with synthetic data
-uv run invoke run         # full pipeline (requires real data in source_data/)
+
+# 2. Smoke test — generates synthetic data and runs the full pipeline end-to-end
+uv run invoke run-smoke
+
+# 3. Switch to real data
+#    - Edit invoke.yaml: set phenotype_file, eeg_tsv / eeg_mne_dir,
+#      fmri_tsv / fmri_halfpipe_dir, eeg_input_type, fmri_input_type
+#    - Place your data files in source_data/ (see source_data/CONTENT.md)
+uv run invoke clean       # remove smoke outputs so the real run is not skipped
+uv run invoke run         # full pipeline with your data
 ```
 
 ---
@@ -26,7 +35,14 @@ uv run invoke run         # full pipeline (requires real data in source_data/)
 ## Setup
 
 ```bash
+# uv (recommended):
 uv sync
+
+# pip:
+pip install -r requirements.txt
+
+# conda:
+conda env create -f environment.yml && conda activate airoh_env
 ```
 
 ---
