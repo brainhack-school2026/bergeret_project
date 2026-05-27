@@ -56,13 +56,18 @@ def _connectivity_col_names():
     return [f"corr_{i}_{j}" for i in range(1, N_ROIS + 1) for j in range(i + 1, N_ROIS + 1)]
 
 
-def _signal_diag(n, seed):
-    """Latent signal driving diagnosis and partially driving features."""
+def _signal_diag_eeg(n, seed):
+    """Diagnostic signal captured by EEG — independent of the fMRI component."""
     return np.random.default_rng(seed).standard_normal(n)
 
 
+def _signal_diag_fmri(n, seed):
+    """Diagnostic signal captured by fMRI — independent of the EEG component."""
+    return np.random.default_rng(seed + 50).standard_normal(n)
+
+
 def _signal_gender(n, seed):
-    """Latent signal driving gender and partially driving features — independent of _signal_diag."""
+    """Gender signal embedded in both modalities — independent of diagnosis signals."""
     return np.random.default_rng(seed + 100).standard_normal(n)
 
 
@@ -97,8 +102,9 @@ def generate_phenotype(out_dir, n_subjects=N_SUBJECTS, seed=42):
     rng = np.random.default_rng(seed)
     ids = _subject_ids(n_subjects)
 
-    # Two independent signals → two independent balanced targets
-    sig_d = _signal_diag(n_subjects, seed)
+    # Diagnosis: sum of two complementary components (one per modality)
+    # so each modality alone has only partial information
+    sig_d = _signal_diag_eeg(n_subjects, seed) + _signal_diag_fmri(n_subjects, seed)
     sig_g = _signal_gender(n_subjects, seed)
     diagnosis = _balanced_binary(sig_d)
     gender = ["Female" if g else "Male" for g in _balanced_binary(sig_g)]
@@ -121,14 +127,15 @@ def generate_phenotype(out_dir, n_subjects=N_SUBJECTS, seed=42):
 def generate_eeg_tsv(out_dir, n_subjects=N_SUBJECTS, seed=42):
     rng = np.random.default_rng(seed + 1)
     ids = _subject_ids(n_subjects)
-    sig_d = _signal_diag(n_subjects, seed)
+    # EEG captures its own diagnostic component + gender, but NOT the fMRI component
+    sig_d_eeg = _signal_diag_eeg(n_subjects, seed)
     sig_g = _signal_gender(n_subjects, seed)
 
-    w_d = rng.uniform(0.25, 0.50, len(EEG_FEATURE_NAMES))
-    w_g = rng.uniform(0.25, 0.50, len(EEG_FEATURE_NAMES))
+    w_d = rng.uniform(0.09, 0.13, len(EEG_FEATURE_NAMES))
+    w_g = rng.uniform(0.07, 0.11, len(EEG_FEATURE_NAMES))
 
     data = (rng.standard_normal((n_subjects, len(EEG_FEATURE_NAMES)))
-            + np.outer(sig_d, w_d)
+            + np.outer(sig_d_eeg, w_d)
             + np.outer(sig_g, w_g))
 
     data = _add_sparse_nan(rng, data, _SPARSE_NAN_RATE)
@@ -150,16 +157,16 @@ def generate_mne_output(out_dir, n_subjects=N_SUBJECTS, seed=42):
     """
     rng = np.random.default_rng(seed + 2)
     ids = _subject_ids(n_subjects)
-    sig_d = _signal_diag(n_subjects, seed)
+    sig_d_eeg = _signal_diag_eeg(n_subjects, seed)
     sig_g = _signal_gender(n_subjects, seed)
-    w_d = rng.uniform(0.25, 0.50, len(EEG_FEATURE_NAMES))
-    w_g = rng.uniform(0.25, 0.50, len(EEG_FEATURE_NAMES))
+    w_d = rng.uniform(0.09, 0.13, len(EEG_FEATURE_NAMES))
+    w_g = rng.uniform(0.07, 0.11, len(EEG_FEATURE_NAMES))
     mne_dir = Path(out_dir) / "mne_output"
     for i, sub_id in enumerate(ids):
         sub_dir = mne_dir / sub_id
         sub_dir.mkdir(parents=True, exist_ok=True)
         features = (rng.standard_normal(len(EEG_FEATURE_NAMES))
-                    + sig_d[i] * w_d + sig_g[i] * w_g)
+                    + sig_d_eeg[i] * w_d + sig_g[i] * w_g)
         pd.DataFrame([features], columns=EEG_FEATURE_NAMES).to_csv(
             sub_dir / f"{sub_id}_eeg_features.csv", index=False
         )
@@ -168,12 +175,13 @@ def generate_mne_output(out_dir, n_subjects=N_SUBJECTS, seed=42):
 def generate_fmri_tsv(out_dir, n_subjects=N_SUBJECTS, seed=42):
     rng = np.random.default_rng(seed + 3)
     ids = _subject_ids(n_subjects)
-    sig_d = _signal_diag(n_subjects, seed)
+    # fMRI captures its own diagnostic component + gender, but NOT the EEG component
+    sig_d_fmri = _signal_diag_fmri(n_subjects, seed)
     sig_g = _signal_gender(n_subjects, seed)
     col_names = _connectivity_col_names()
 
     rows = np.array([
-        _make_connectivity_matrix(rng, sig_d[i] + 0.5 * sig_g[i])[np.triu_indices(N_ROIS, k=1)]
+        _make_connectivity_matrix(rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i])[np.triu_indices(N_ROIS, k=1)]
         for i in range(n_subjects)
     ], dtype=float)
 
@@ -202,7 +210,7 @@ def generate_halfpipe_output(out_dir, n_subjects=N_SUBJECTS, strategies=None, se
         strategies = ["36P"]
     rng = np.random.default_rng(seed + 4)
     ids = _subject_ids(n_subjects)
-    sig_d = _signal_diag(n_subjects, seed)
+    sig_d_fmri = _signal_diag_fmri(n_subjects, seed)
     sig_g = _signal_gender(n_subjects, seed)
     halfpipe_dir = Path(out_dir) / "halfpipe_output"
 
@@ -214,7 +222,7 @@ def generate_halfpipe_output(out_dir, n_subjects=N_SUBJECTS, strategies=None, se
         for strategy in strategies:
             for run in range(1, n_runs + 1):
                 mat = _make_connectivity_matrix(
-                    rng, sig_d[i] + 0.5 * sig_g[i], nan_roi_pairs=nan_pairs
+                    rng, 0.14 * sig_d_fmri[i] + 0.08 * sig_g[i], nan_roi_pairs=nan_pairs
                 )
                 fname = (
                     f"{sub_id}_ses-1_task-rest_run-{run}"
