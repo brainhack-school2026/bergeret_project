@@ -1,5 +1,11 @@
-# Ignore data files 
-*.tar.gz 
+# Ignore data files
+*.tar.gz
+
+# Generated outputs and local config
+output_data/*
+!output_data/CONTENT.md
+invoke.yaml
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
