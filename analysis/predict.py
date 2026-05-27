@@ -54,7 +54,7 @@ def detect_task(y: pd.Series) -> Literal["classification", "regression"]:
     if y.dtype.kind in ("O", "S", "U"):  # object / string dtype → categorical
         return "classification"
     try:
-        if y.nunique() <= 10 and all(float(v).is_integer() for v in y.dropna()):
+        if y.nunique() <= 5 and all(float(v).is_integer() for v in y.dropna()):
             return "classification"
     except (ValueError, TypeError):
         return "classification"

@@ -155,7 +155,8 @@ def run_predict(c, target=None, smoke=False):
     from analysis.predict import run_prediction
     from airoh.utils import ensure_dir_exist
 
-    results_dir = Path(c.config.get("output_data_dir")) / "results"
+    target_col = target or c.config.get("target_column", "diagnosis")
+    results_dir = Path(c.config.get("output_data_dir")) / "results" / target_col
     metrics_path = results_dir / "metrics.tsv"
     if metrics_path.exists():
         print(f"[run-predict] Skipping — {metrics_path} already exists")
@@ -179,7 +180,6 @@ def run_predict(c, target=None, smoke=False):
     fmri_df = pd.read_csv(fmri_path, sep="\t", dtype={"participant_id": str})
     phenotype_df = pd.read_csv(phenotype_path, sep="\t", dtype={"participant_id": str})
 
-    target_col = target or c.config.get("target_column", "diagnosis")
     model_type = c.config.get("model_type", "ridge")
     n_outer = int(c.config.get("cv_outer_folds", 5))
     n_inner = int(c.config.get("cv_inner_folds", 5))
@@ -227,7 +227,8 @@ def run_smoke(c):
     run_intersect(c, smoke=True)
     run_load_eeg(c, smoke=True)
     run_load_fmri(c, smoke=True)
-    run_predict(c, smoke=True)
+    run_predict(c, smoke=True)                    # classification: diagnosis
+    run_predict(c, target="age", smoke=True)      # regression: age
     run_notebooks(c)
 
 
