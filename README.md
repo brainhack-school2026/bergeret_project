@@ -52,6 +52,7 @@ Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"
 |---|---|
 | `fetch` | Print instructions for placing real source data |
 | `generate-smoke-data` | Generate lightweight synthetic data for testing |
+| `run-intersect` | Compute subject intersection across EEG, fMRI, and phenotype → `output_data/subjects.txt` |
 | `run-load-eeg` | Load and harmonise EEG features → `output_data/eeg_features.tsv` |
 | `run-load-fmri` | Load and harmonise fMRI connectivity → `output_data/fmri_features.tsv` |
 | `run-predict` | Train and evaluate EEG-only, fMRI-only, and multimodal models → `output_data/results/` |
@@ -59,6 +60,7 @@ Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"
 | `run` | Full pipeline (all steps in order) |
 | `run-smoke` | Smoke test: synthetic data + minimal end-to-end pass |
 | `clean` | Remove all generated outputs and synthetic data |
+| `clean-intersect` | Remove `output_data/subjects.txt` |
 | `clean-outputs` | Remove flat TSV and PNG outputs from `output_data/` |
 | `clean-predict` | Remove prediction results from `output_data/results/` |
 | `clean-smoke` | Remove synthetic smoke data from `source_data/smoke/` |

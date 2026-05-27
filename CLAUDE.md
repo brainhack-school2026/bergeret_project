@@ -59,12 +59,15 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 
 | Task | Input | Output | Key module |
 |---|---|---|---|
-| `run-load-eeg` | TSV or MNE folder | `output_data/eeg_features.tsv` | `analysis/load_eeg.py` |
-| `run-load-fmri` | TSV or Halfpipe folder | `output_data/fmri_features.tsv` | `analysis/load_fmri.py` |
+| `run-intersect` | EEG source + fMRI source + phenotype | `output_data/subjects.txt` | `tasks.py` |
+| `run-load-eeg` | TSV or MNE folder (filtered to `subjects.txt`) | `output_data/eeg_features.tsv` | `analysis/load_eeg.py` |
+| `run-load-fmri` | TSV or Halfpipe folder (filtered to `subjects.txt`) | `output_data/fmri_features.tsv` | `analysis/load_fmri.py` |
 | `run-predict` | both feature TSVs + phenotype | `output_data/results/metrics.tsv`, `fold_scores.tsv` | `analysis/predict.py` |
 | `run-notebooks` | `output_data/results/` | `output_data/scores_by_condition.png`, `fold_distribution.png` | `notebooks/results_overview.ipynb` |
 
-**Cleaning tasks:** `clean-outputs` removes flat TSVs and PNGs; `clean-predict` removes `output_data/results/`; `clean-smoke` removes `source_data/smoke/`. The top-level `clean` calls all three.
+**Cleaning tasks:** `clean-intersect` removes `subjects.txt`; `clean-outputs` removes flat TSVs and PNGs; `clean-predict` removes `output_data/results/`; `clean-smoke` removes `source_data/smoke/`. The top-level `clean` calls all four.
+
+**Subject intersection:** `run-intersect` reads only subject IDs (not features) from each source — directory listing for MNE/Halfpipe, `participant_id` column for TSVs — and writes the common set to `output_data/subjects.txt`. Both `run-load-eeg` and `run-load-fmri` have `pre=[run_intersect]` so the intersection always runs first, avoiding loading data for subjects that would be dropped anyway.
 
 ## Prediction pipeline (`analysis/predict.py`)
 
