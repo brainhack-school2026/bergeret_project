@@ -1,6 +1,9 @@
 # Ignore data files
 *.tar.gz
 
+# macOS metadata
+.DS_Store
+
 # Generated outputs and local config
 output_data/*
 !output_data/CONTENT.md

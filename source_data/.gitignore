@@ -1,2 +1,4 @@
 *.tsv
+*.csv
+*.json
 smoke/
