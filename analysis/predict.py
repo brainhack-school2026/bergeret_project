@@ -36,6 +36,7 @@ import pandas as pd
 from scipy import stats
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import ElasticNet, LogisticRegression, Ridge
 from sklearn.metrics import balanced_accuracy_score, mean_absolute_error, r2_score
 from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
@@ -205,6 +206,11 @@ def _run_nested_cv(
     for train_idx, test_idx in outer_cv.split(X, y):
         X_tr, X_te = X[train_idx], X[test_idx]
         y_tr, y_te = y[train_idx], y[test_idx]
+
+        # Impute residual NaN (fitted on train only — no leakage)
+        imputer = SimpleImputer(strategy="median")
+        X_tr = imputer.fit_transform(X_tr)
+        X_te = imputer.transform(X_te)
 
         # PCA fitted only on training data
         n_components = min(pca_variance, X_tr.shape[0] - 1, X_tr.shape[1])
