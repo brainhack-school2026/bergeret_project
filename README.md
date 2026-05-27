@@ -56,7 +56,7 @@ Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"
 | `run-intersect` | Compute subject intersection across EEG, fMRI, and phenotype; drop subjects with missing confound values → `output_data/subjects.txt` |
 | `run-load-eeg` | Load and harmonise EEG features → `output_data/eeg_features.tsv` |
 | `run-load-fmri` | Load and harmonise fMRI connectivity → `output_data/fmri_features.tsv` |
-| `run-predict` | Train and evaluate EEG-only, fMRI-only, and multimodal models → `output_data/results/` |
+| `run-predict` | Train and evaluate EEG-only, fMRI-only, and multimodal models → `output_data/results/{target}/` |
 | `run-notebooks` | Execute notebooks and save figures to `output_data/` |
 | `run` | Full pipeline (all steps in order) |
 | `run-smoke` | Smoke test: synthetic data + minimal end-to-end pass |
@@ -96,7 +96,7 @@ See [`output_data/CONTENT.md`](output_data/CONTENT.md) for a description of all 
 
 | Notebook | Description | Figures produced |
 |---|---|---|
-| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition.png` (bar + fold overlay, p-value annotations), `fold_distribution.png` (violin per condition) |
+| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition_{target}.png` (bar + fold overlay, p-value annotations), `fold_distribution_{target}.png` (violin per condition) — one pair of figures per prediction target |
 
 ---
 
