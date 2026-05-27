@@ -14,6 +14,7 @@ MNE format:
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -68,6 +69,44 @@ def load_eeg_mne(mne_dir: Path, subjects: list[str] | None = None) -> pd.DataFra
     return df[cols].reset_index(drop=True)
 
 
+def impute_eeg_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    NaN handling at the group level (applied after loading regardless of input type):
+      1. Drop features that are NaN for every subject.
+      2. Impute remaining NaN with the cross-subject median for that feature.
+      3. Print a single summary line with the fraction of values affected.
+    """
+    feat_cols = [c for c in df.columns if c != "participant_id"]
+    X = df[feat_cols].values.astype(float)
+
+    total_values = X.size
+    n_nan_initial = int(np.isnan(X).sum())
+
+    # Step 1: drop all-NaN columns
+    all_nan_mask = np.all(np.isnan(X), axis=0)
+    n_dropped_cols = int(all_nan_mask.sum())
+    n_dropped_values = n_dropped_cols * X.shape[0]
+    X = X[:, ~all_nan_mask]
+    kept_cols = [c for c, drop in zip(feat_cols, all_nan_mask) if not drop]
+
+    # Step 2: impute remaining NaN with column median
+    nan_remaining = np.isnan(X)
+    n_imputed = int(nan_remaining.sum())
+    col_medians = np.nanmedian(X, axis=0)
+    X[nan_remaining] = np.take(col_medians, np.where(nan_remaining)[1])
+
+    pct_affected = 100 * (n_dropped_values + n_imputed) / total_values
+    print(
+        f"[load-eeg] NaN summary: {n_imputed} values imputed (median), "
+        f"{n_dropped_cols} all-NaN columns dropped "
+        f"({pct_affected:.1f}% of {total_values} total values affected)"
+    )
+
+    result = pd.DataFrame(X, columns=kept_cols)
+    result.insert(0, "participant_id", df["participant_id"].values)
+    return result
+
+
 def load_eeg(path: Path, input_type: str = "auto", subjects: list[str] | None = None) -> pd.DataFrame:
     """
     Load EEG features from either a TSV file or a MNE output folder.
@@ -82,8 +121,10 @@ def load_eeg(path: Path, input_type: str = "auto", subjects: list[str] | None = 
         input_type = detect_input_type(path)
 
     if input_type == "tsv":
-        return load_eeg_tsv(path, subjects=subjects)
+        df = load_eeg_tsv(path, subjects=subjects)
     elif input_type == "mne":
-        return load_eeg_mne(path, subjects=subjects)
+        df = load_eeg_mne(path, subjects=subjects)
     else:
         raise ValueError(f"Unknown eeg_input_type: '{input_type}'. Expected 'tsv' or 'mne'.")
+
+    return impute_eeg_features(df)
