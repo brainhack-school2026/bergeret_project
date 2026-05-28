@@ -50,15 +50,27 @@ uv run invoke run         # full pipeline with your data
 ## Setup
 
 ```bash
-# uv (recommended):
+# uv (recommended — handles virtualenv automatically):
 uv sync
 
-# pip:
+# pip (e.g. on HPC without uv):
+python -m venv venv
+source venv/bin/activate          # Linux / macOS
+# venv\Scripts\activate           # Windows
 pip install -r requirements.txt
 
 # conda:
-conda env create -f environment.yml && conda activate airoh_env
+conda env create -f environment.yml
+conda activate airoh_env
 ```
+
+> **HPC note:** if your cluster uses environment modules, load Python first:
+> ```bash
+> module load python/3.11   # adapt to your cluster's module name
+> python -m venv venv
+> source venv/bin/activate
+> pip install -r requirements.txt
+> ```
 
 ---
 
