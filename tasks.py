@@ -33,9 +33,6 @@ def run_intersect(c, smoke=False):
 
     ensure_dir_exist(c, "output_data_dir")
     smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
-    eeg_type = c.config.get("eeg_input_type", "auto")
-    fmri_type = c.config.get("fmri_input_type", "auto")
-
     def ids_from_tsv(path):
         return set(pd.read_csv(path, sep="\t", usecols=["participant_id"], dtype=str)["participant_id"])
 
@@ -43,17 +40,11 @@ def run_intersect(c, smoke=False):
         return {d.name for d in Path(path).iterdir() if d.is_dir()}
 
     # EEG subjects
-    if smoke:
-        eeg_path = smoke_dir / ("mne_output" if eeg_type == "mne" else "eeg_features.tsv")
-    else:
-        eeg_path = Path(c.config.get("eeg_mne_dir") if eeg_type == "mne" else c.config.get("eeg_tsv"))
+    _, eeg_path = _resolve_path(c, "eeg", smoke_dir if smoke else None)
     eeg_ids = ids_from_dir(eeg_path) if eeg_path.is_dir() else ids_from_tsv(eeg_path)
 
     # fMRI subjects
-    if smoke:
-        fmri_path = smoke_dir / ("halfpipe_output" if fmri_type == "halfpipe" else "fmri_features.tsv")
-    else:
-        fmri_path = Path(c.config.get("fmri_halfpipe_dir") if fmri_type == "halfpipe" else c.config.get("fmri_tsv"))
+    _, fmri_path = _resolve_path(c, "fmri", smoke_dir if smoke else None)
     fmri_ids = ids_from_dir(fmri_path) if fmri_path.is_dir() else ids_from_tsv(fmri_path)
 
     # Phenotype subjects
@@ -86,6 +77,61 @@ def run_intersect(c, smoke=False):
     )
 
 
+def _detect_input_type(search_dir: Path, modality: str) -> tuple[str, Path]:
+    """Auto-detect EEG or fMRI input format by inspecting search_dir.
+
+    EEG: looks for 'eeg_features.tsv' (→ tsv) then 'mne_output/' (→ mne).
+    fMRI: looks for 'fmri_features.tsv' (→ tsv) then 'halfpipe_output/' (→ halfpipe).
+    TSV takes priority when both are present.
+    """
+    if modality == "eeg":
+        if (search_dir / "eeg_features.tsv").exists():
+            detected = ("tsv", search_dir / "eeg_features.tsv")
+        elif (search_dir / "mne_output").is_dir():
+            detected = ("mne", search_dir / "mne_output")
+        else:
+            raise FileNotFoundError(
+                f"No EEG input found in {search_dir} — "
+                "expected 'eeg_features.tsv' or 'mne_output/'"
+            )
+    else:
+        if (search_dir / "fmri_features.tsv").exists():
+            detected = ("tsv", search_dir / "fmri_features.tsv")
+        elif (search_dir / "halfpipe_output").is_dir():
+            detected = ("halfpipe", search_dir / "halfpipe_output")
+        else:
+            raise FileNotFoundError(
+                f"No fMRI input found in {search_dir} — "
+                "expected 'fmri_features.tsv' or 'halfpipe_output/'"
+            )
+    print(f"[auto-detect] {modality.upper()} → {detected[0]} ({detected[1]})", flush=True)
+    return detected
+
+
+def _resolve_path(c, modality: str, smoke_dir: Path | None = None) -> tuple[str, Path]:
+    """Return (input_type, path) for a given modality.
+
+    In smoke mode (smoke_dir provided): always auto-detect from smoke_dir.
+    Otherwise: auto-detect from source_data_dir when input_type is 'auto',
+    or use the explicit config paths.
+    """
+    if smoke_dir is not None:
+        return _detect_input_type(smoke_dir, modality)
+
+    if modality == "eeg":
+        input_type = c.config.get("eeg_input_type", "auto")
+        if input_type == "auto":
+            return _detect_input_type(Path(c.config.get("source_data_dir")), "eeg")
+        path = Path(c.config.get("eeg_mne_dir") if input_type == "mne" else c.config.get("eeg_tsv"))
+        return input_type, path
+
+    input_type = c.config.get("fmri_input_type", "auto")
+    if input_type == "auto":
+        return _detect_input_type(Path(c.config.get("source_data_dir")), "fmri")
+    path = Path(c.config.get("fmri_halfpipe_dir") if input_type == "halfpipe" else c.config.get("fmri_tsv"))
+    return input_type, path
+
+
 def _load_subjects(output_data_dir: Path) -> list[str] | None:
     """Read subjects.txt if it exists, else return None (load all)."""
     path = output_data_dir / "subjects.txt"
@@ -107,12 +153,7 @@ def run_load_eeg(c, subjects=None, smoke=False):
 
     ensure_dir_exist(c, "output_data_dir")
     smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
-    eeg_type = c.config.get("eeg_input_type", "auto")
-
-    if smoke:
-        path = smoke_dir / ("mne_output" if eeg_type == "mne" else "eeg_features.tsv")
-    else:
-        path = Path(c.config.get("eeg_mne_dir") if eeg_type == "mne" else c.config.get("eeg_tsv"))
+    eeg_type, path = _resolve_path(c, "eeg", smoke_dir if smoke else None)
 
     output_data_dir = Path(c.config.get("output_data_dir"))
     subjects_list = subjects.split(",") if subjects else _load_subjects(output_data_dir)
@@ -134,13 +175,8 @@ def run_load_fmri(c, subjects=None, smoke=False):
 
     ensure_dir_exist(c, "output_data_dir")
     smoke_dir = Path(c.config.get("source_data_dir")) / "smoke"
-    fmri_type = c.config.get("fmri_input_type", "auto")
+    fmri_type, path = _resolve_path(c, "fmri", smoke_dir if smoke else None)
     strategy = c.config.get("fmri_halfpipe_strategy", "36P")
-
-    if smoke:
-        path = smoke_dir / ("halfpipe_output" if fmri_type == "halfpipe" else "fmri_features.tsv")
-    else:
-        path = Path(c.config.get("fmri_halfpipe_dir") if fmri_type == "halfpipe" else c.config.get("fmri_tsv"))
 
     output_data_dir = Path(c.config.get("output_data_dir"))
     subjects_list = subjects.split(",") if subjects else _load_subjects(output_data_dir)

@@ -1,0 +1,47 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+# Build from project root:
+#   singularity build brainhack_multimodal.sif singularity.def
+# Or with fakeroot (no sudo needed):
+#   singularity build --fakeroot brainhack_multimodal.sif singularity.def
+
+%files
+    requirements.txt   /app/requirements.txt
+    analysis           /app/analysis
+    notebooks          /app/notebooks
+    tasks.py           /app/tasks.py
+    container_run.sh   /app/container_run.sh
+
+%post
+    pip install --no-cache-dir -r /app/requirements.txt
+    chmod +x /app/container_run.sh
+    mkdir -p /data/source_data /data/output_data
+
+%environment
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec /app/container_run.sh "$@"
+
+%labels
+    Author Pierre Bergeret
+    Project brainhack-2026-multimodal
+
+%help
+    Multimodal EEG/fMRI fusion pipeline for psychiatric prediction.
+    Input format (tsv / MNE / Halfpipe) is detected automatically.
+
+    Smoke test (no data needed):
+        singularity run brainhack_multimodal.sif --smoke
+
+    Production run:
+        singularity run \
+          -B /path/to/source_data:/data/source_data \
+          -B /path/to/output_data:/data/output_data \
+          brainhack_multimodal.sif \
+          --target-column diagnosis \
+          --model-type ridge \
+          --n-permutations 500
+
+    All options: singularity run brainhack_multimodal.sif --help

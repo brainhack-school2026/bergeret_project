@@ -14,12 +14,12 @@ output_data_dir: output_data
 phenotype_file: source_data/phenotype.tsv
 
 # EEG: set eeg_input_type to "tsv" (flat feature table) or "mne" (MNE output folder)
-eeg_input_type: tsv
+eeg_input_type: auto
 eeg_tsv: source_data/eeg_features.tsv
 eeg_mne_dir: source_data/mne_output
 
 # fMRI: set fmri_input_type to "tsv" (flat connectivity table) or "halfpipe" (Halfpipe output)
-fmri_input_type: tsv
+fmri_input_type: auto
 fmri_tsv: source_data/fmri_features.tsv
 fmri_halfpipe_dir: source_data/halfpipe_output
 # Halfpipe denoising strategy = value of the feature- BIDS tag (e.g. Baseline, 36P, aCompCor)

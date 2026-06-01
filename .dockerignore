@@ -1,0 +1,11 @@
+.git
+source_data
+output_data
+venv
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.sif
+.DS_Store
+invoke.yaml

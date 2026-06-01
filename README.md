@@ -74,6 +74,77 @@ conda activate airoh_env
 
 ---
 
+## Container (Singularity / Apptainer)
+
+For maximum reproducibility on HPC clusters, a Singularity image bakes the
+code and all dependencies. Data is provided at runtime via bind mounts.
+Input format (TSV vs MNE / Halfpipe) is **auto-detected** — no flag needed.
+
+### Build the image
+
+**Option A — Docker first (build locally, run on HPC):**
+```bash
+# 1. Build Docker image
+docker build -t brainhack-multimodal .
+
+# 2. Convert to Singularity SIF
+singularity build brainhack_multimodal.sif docker-daemon://brainhack-multimodal:latest
+
+# 3. Transfer the .sif to your HPC
+scp brainhack_multimodal.sif user@hpc.cluster.ca:~/projects/
+```
+
+**Option B — Singularity only (build directly on HPC, no Docker needed):**
+```bash
+# Requires fakeroot or sudo; run from the project root
+singularity build --fakeroot brainhack_multimodal.sif singularity.def
+# or with Apptainer:
+apptainer build --fakeroot brainhack_multimodal.sif singularity.def
+```
+
+### Run
+
+```bash
+singularity run \
+  -B /path/to/source_data:/data/source_data \
+  -B /path/to/output_data:/data/output_data \
+  brainhack_multimodal.sif \
+  --target-column diagnosis \
+  --model-type ridge \
+  --n-permutations 500
+```
+
+All options:
+```
+--target-column STR          Column to predict                    [diagnosis]
+--model-type STR             logistic|ridge|elasticnet|svm|rf     [ridge]
+--n-permutations INT         Permutations for null distribution    [500]
+--fmri-halfpipe-strategy STR Halfpipe denoising strategy tag      [Baseline]
+--cv-outer-folds INT         Outer CV folds                        [5]
+--cv-inner-folds INT         Inner CV folds                        [5]
+--pca-variance FLOAT         PCA explained variance threshold      [0.95]
+--smoke                      Self-contained smoke test (no mounts)
+```
+
+### SLURM example
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=brainhack-multimodal
+#SBATCH --time=12:00:00
+#SBATCH --mem=16G
+#SBATCH --cpus-per-task=4
+
+singularity run \
+  -B $SLURM_SUBMIT_DIR/source_data:/data/source_data \
+  -B $SLURM_SUBMIT_DIR/output_data:/data/output_data \
+  brainhack_multimodal.sif \
+  --target-column diagnosis \
+  --n-permutations 500
+```
+
+---
+
 ## Data inputs
 
 Place your data files in `source_data/` and configure paths in `invoke.yaml`.
