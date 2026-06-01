@@ -186,6 +186,36 @@ def _score(y_true, y_pred, task_type: str, y_score=None) -> dict:
         }
 
 
+def _extract_feature_importance(gs, pca: PCA):
+    """
+    Project model importance back to original feature space via PCA loadings.
+
+    For linear models (coef_): weight vector in standardised PCA space is
+    divided by the scaler's scale then dotted with |pca.components_| to obtain
+    per-original-feature importance magnitudes.
+
+    For RandomForest (feature_importances_): MDI scores in PCA space are
+    distributed back to original features proportionally to loading magnitudes.
+
+    Returns None for SVM RBF (no analytic importance available).
+    """
+    best_pipe = gs.best_estimator_
+    model = best_pipe.named_steps["model"]
+    scaler = best_pipe.named_steps["scaler"]
+    loadings = np.abs(pca.components_)  # (n_components, n_features)
+
+    if hasattr(model, "coef_"):
+        coef = np.atleast_2d(model.coef_)           # (n_classes_or_1, n_components)
+        coef_1d = np.mean(np.abs(coef), axis=0)     # average across classes
+        coef_raw = coef_1d / scaler.scale_           # undo StandardScaler
+        return coef_raw @ loadings                   # (n_features,)
+
+    if hasattr(model, "feature_importances_"):
+        return model.feature_importances_ @ loadings  # (n_features,)
+
+    return None  # SVM RBF
+
+
 def _run_nested_cv(
     X: np.ndarray,
     y: np.ndarray,
@@ -195,8 +225,9 @@ def _run_nested_cv(
     n_inner: int = 5,
     pca_variance: float = 0.95,
     random_state: int = 0,
-) -> list[dict]:
-    """Return a list of per-fold score dicts."""
+    return_importances: bool = False,
+):
+    """Return per-fold score dicts, and optionally per-fold importance arrays."""
     is_clf = task_type == "classification"
     outer_cv = (
         StratifiedKFold(n_splits=n_outer, shuffle=True, random_state=random_state)
@@ -211,6 +242,7 @@ def _run_nested_cv(
 
     estimator, param_grid = _get_estimator_and_grid(model_type, task_type)
     fold_scores = []
+    fold_importances = [] if return_importances else None
 
     for train_idx, test_idx in outer_cv.split(X, y):
         X_tr, X_te = X[train_idx], X[test_idx]
@@ -248,6 +280,11 @@ def _run_nested_cv(
         y_score = gs.predict_proba(X_te_pca) if is_clf and hasattr(gs, "predict_proba") else None
         fold_scores.append(_score(y_te, y_pred, task_type, y_score=y_score))
 
+        if return_importances:
+            fold_importances.append(_extract_feature_importance(gs, pca))
+
+    if return_importances:
+        return fold_scores, fold_importances
     return fold_scores
 
 
@@ -308,13 +345,15 @@ def run_prediction(
     pca_variance: float = 0.95,
     n_permutations: int = 100,
     random_state: int = 0,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Run EEG-only, fMRI-only, and multimodal prediction.
 
     Returns:
         metrics_df    — one row per condition with mean/std scores and p-values
         fold_df       — raw per-fold scores (long format)
+        importance_df — per-feature importance (mean/std across folds, tagged by modality);
+                        empty DataFrame for models without analytic importance (SVM RBF)
     """
     # ── align subjects ──────────────────────────────────────────────────────
     common_ids = (
@@ -361,11 +400,16 @@ def run_prediction(
 
     fold_records = []
     condition_folds = {}
+    condition_importances = {}
 
     for cond_name, X in conditions.items():
         print(f"[predict] Running nested CV: {cond_name} …", flush=True)
-        folds = _run_nested_cv(X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state)
+        folds, importances = _run_nested_cv(
+            X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state,
+            return_importances=True,
+        )
         condition_folds[cond_name] = folds
+        condition_importances[cond_name] = importances
         for fold_i, scores in enumerate(folds):
             for metric, value in scores.items():
                 fold_records.append({
@@ -420,4 +464,34 @@ def run_prediction(
         metric_rows.append(row)
 
     metrics_df = pd.DataFrame(metric_rows)
-    return metrics_df, fold_df
+
+    # ── feature importance table ────────────────────────────────────────────
+    feat_info = {
+        "eeg_only":   (eeg_feat,            ["eeg"]  * len(eeg_feat)),
+        "fmri_only":  (fmri_feat,           ["fmri"] * len(fmri_feat)),
+        "multimodal": (eeg_feat + fmri_feat, ["eeg"] * len(eeg_feat) + ["fmri"] * len(fmri_feat)),
+    }
+    importance_records = []
+    for cond_name, (feat_names, modality_tags) in feat_info.items():
+        imp_list = condition_importances[cond_name]
+        if any(imp is None for imp in imp_list):
+            print(
+                f"[predict] Feature importance not available for {cond_name} "
+                f"(model '{model_type}' has no analytic importance — skipped)",
+                flush=True,
+            )
+            continue
+        imp_matrix = np.stack(imp_list)          # (n_folds, n_features)
+        imp_mean = imp_matrix.mean(axis=0)
+        imp_std  = imp_matrix.std(axis=0)
+        for feat, mod, mean_val, std_val in zip(feat_names, modality_tags, imp_mean, imp_std):
+            importance_records.append({
+                "condition":       cond_name,
+                "feature":         feat,
+                "modality":        mod,
+                "importance_mean": mean_val,
+                "importance_std":  std_val,
+            })
+
+    importance_df = pd.DataFrame(importance_records)
+    return metrics_df, fold_df, importance_df

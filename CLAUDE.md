@@ -93,6 +93,9 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 **Outputs:**
 - `output_data/results/{target}/metrics.tsv` — one row per condition: mean/std for all metrics, `p_vs_chance`, paired p-values.
 - `output_data/results/{target}/fold_scores.tsv` — raw per-fold scores in long format.
+- `output_data/results/{target}/feature_importances.tsv` — per-feature importance (mean/std across outer folds), columns: `condition`, `feature`, `modality`, `importance_mean`, `importance_std`. Not produced for SVM RBF.
+
+**Feature importance:** `_extract_feature_importance(gs, pca)` projects model-native importance back to original feature space. For linear models (`coef_`): `mean(|coef|) / scaler.scale_ @ |pca.components_|`. For RandomForest (`feature_importances_`): `fi @ |pca.components_|` (MDI in PCA space, approximate). For SVM RBF: returns None (skipped with warning). In the multimodal condition features are tagged `eeg` or `fmri` so per-modality aggregates can be computed downstream.
 
 **Known methodological limitations (acceptable for Brainhack, revisit before publication):**
 - *Confound correction before CV*: `correct_confounds` fits OLS betas on all subjects (including test folds) before the CV loop. The strictly correct approach is to fit the confound model on each training fold and apply it to the held-out fold. This refactor would require passing the confound matrix into `_run_nested_cv`. The bias introduced by the current approach is small when confounds are weakly correlated with features, but could inflate performance estimates in edge cases (e.g. strong site effects with small N per site).
@@ -100,9 +103,11 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 
 ## Notebooks
 
-`notebooks/results_overview.ipynb` reads `output_data/results/` and produces two figures:
-- `scores_by_condition.png` — bar chart (mean ± std) with per-fold overlay and p-vs-chance annotations.
-- `fold_distribution.png` — violin plot of per-fold score distribution per condition.
+`notebooks/results_overview.ipynb` reads `output_data/results/` and produces figures per target:
+- `scores_by_condition_{target}.png` — bar chart (mean ± std) with per-fold overlay, p-vs-chance annotations, and significance brackets (paired t-tests).
+- `fold_distribution_{target}.png` — violin plot of per-fold score distribution per condition.
+- `feature_importance_{target}.png` — top-20 features per condition (horizontal bar chart), coloured by modality.
+- `modality_importance_{target}.png` — mean importance aggregated by modality (EEG vs fMRI) for the multimodal condition.
 - A significance summary cell prints p-values (vs chance + paired t-tests) with star notation.
 
 Notebooks receive `OUTPUT_DATA_DIR` and `SOURCE_DATA_DIR` as environment variables (injected by `airoh.utils.run_notebooks`). All heavy computation must remain in `analysis/` — notebooks are visualization only.

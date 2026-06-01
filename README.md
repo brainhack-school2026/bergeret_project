@@ -139,7 +139,7 @@ See [`output_data/CONTENT.md`](output_data/CONTENT.md) for a description of all 
 
 | Notebook | Description | Figures produced |
 |---|---|---|
-| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition_{target}.png` (bar + fold overlay, p-value annotations), `fold_distribution_{target}.png` (violin per condition) — one pair of figures per prediction target |
+| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition_{target}.png` (bar + fold overlay, significance brackets), `fold_distribution_{target}.png` (violin per condition), `feature_importance_{target}.png` (top-20 features per condition, coloured by modality), `modality_importance_{target}.png` (EEG vs fMRI aggregate for multimodal) — one set of figures per prediction target |
 
 ---
 

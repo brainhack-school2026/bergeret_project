@@ -186,7 +186,7 @@ def run_predict(c, target=None, smoke=False):
     pca_variance = float(c.config.get("pca_variance", 0.95))
     n_permutations = int(c.config.get("n_permutations", 100))
 
-    metrics_df, fold_df = run_prediction(
+    metrics_df, fold_df, importance_df = run_prediction(
         eeg_df=eeg_df,
         fmri_df=fmri_df,
         phenotype_df=phenotype_df,
@@ -200,6 +200,10 @@ def run_predict(c, target=None, smoke=False):
 
     metrics_df.to_csv(metrics_path, sep="\t", index=False)
     fold_df.to_csv(results_dir / "fold_scores.tsv", sep="\t", index=False)
+    if not importance_df.empty:
+        imp_path = results_dir / "feature_importances.tsv"
+        importance_df.to_csv(imp_path, sep="\t", index=False)
+        print(f"[run-predict] Feature importances → {imp_path}")
     print(f"[run-predict] Done → {metrics_path}")
     print(metrics_df.to_string(index=False))
 
