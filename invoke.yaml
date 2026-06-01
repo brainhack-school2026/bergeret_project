@@ -40,4 +40,4 @@ cv_inner_folds: 5
 pca_variance: 0.95
 
 # Number of permutations for the null distribution (p-value vs chance)
-n_permutations: 100
+n_permutations: 500
