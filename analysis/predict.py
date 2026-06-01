@@ -264,6 +264,7 @@ def _permutation_test(
     n_permutations: int,
     primary_metric: str,
     random_state: int = 0,
+    label: str = "",
 ) -> float:
     """Return p-value vs chance.
 
@@ -276,12 +277,15 @@ def _permutation_test(
     observed = np.mean([f[primary_metric] for f in observed_folds])
 
     null_scores = []
+    milestone = max(1, n_permutations // 10)
     for i in range(n_permutations):
         y_perm = rng.permutation(y)
         perm_folds = _run_nested_cv(
             X, y_perm, model_type, task_type, n_outer, n_inner, pca_variance, random_state + i + 1
         )
         null_scores.append(np.mean([f[primary_metric] for f in perm_folds]))
+        if (i + 1) % milestone == 0:
+            print(f"[predict]   {label} permutation {i + 1}/{n_permutations}", flush=True)
 
     null_arr = np.array(null_scores)
     if lower_is_better:
@@ -321,7 +325,7 @@ def run_prediction(
     common_ids = sorted(common_ids)
     if not common_ids:
         raise ValueError("No subjects in common across EEG, fMRI, and phenotype.")
-    print(f"[predict] {len(common_ids)} subjects in common across all inputs.")
+    print(f"[predict] {len(common_ids)} subjects in common across all inputs.", flush=True)
 
     eeg_df = eeg_df[eeg_df["participant_id"].isin(common_ids)].sort_values("participant_id").reset_index(drop=True)
     fmri_df = fmri_df[fmri_df["participant_id"].isin(common_ids)].sort_values("participant_id").reset_index(drop=True)
@@ -332,7 +336,7 @@ def run_prediction(
 
     # Keep strings as-is for classification (sklearn handles them); cast to float for regression
     y = y_series.values if task_type == "classification" else y_series.values.astype(float)
-    print(f"[predict] Task type: {task_type} | Target: {target_col} | Model: {model_type}")
+    print(f"[predict] Task type: {task_type} | Target: {target_col} | Model: {model_type}", flush=True)
     primary_metric = "roc_auc" if task_type == "classification" else "mae"
 
     # ── confound correction ─────────────────────────────────────────────────
@@ -346,7 +350,7 @@ def run_prediction(
     X_fmri = fmri_corrected[fmri_feat].values.astype(float)
     X_multi = np.hstack([X_eeg, X_fmri])
 
-    print(f"[predict] EEG features: {X_eeg.shape[1]} | fMRI features: {X_fmri.shape[1]}")
+    print(f"[predict] EEG features: {X_eeg.shape[1]} | fMRI features: {X_fmri.shape[1]}", flush=True)
 
     # ── nested CV per condition ─────────────────────────────────────────────
     conditions = {
@@ -359,7 +363,7 @@ def run_prediction(
     condition_folds = {}
 
     for cond_name, X in conditions.items():
-        print(f"[predict] Running nested CV: {cond_name} …")
+        print(f"[predict] Running nested CV: {cond_name} …", flush=True)
         folds = _run_nested_cv(X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state)
         condition_folds[cond_name] = folds
         for fold_i, scores in enumerate(folds):
@@ -376,10 +380,10 @@ def run_prediction(
     # ── permutation tests ───────────────────────────────────────────────────
     perm_pvalues = {}
     for cond_name, X in conditions.items():
-        print(f"[predict] Permutation test: {cond_name} ({n_permutations} permutations) …")
+        print(f"[predict] Permutation test: {cond_name} ({n_permutations} permutations) …", flush=True)
         perm_pvalues[cond_name] = _permutation_test(
             X, y, model_type, task_type, n_outer, n_inner, pca_variance,
-            n_permutations, primary_metric, random_state
+            n_permutations, primary_metric, random_state, label=cond_name
         )
 
     # ── paired t-tests between conditions ──────────────────────────────────
