@@ -74,12 +74,14 @@ cd "$WORKDIR"
 # ── smoke test — no bind mounts needed ───────────────────────────────────────
 if [[ "${SMOKE}" == "1" ]]; then
     echo "[container] Smoke test mode — generating synthetic data and running pipeline"
+    SMOKE_SOURCE=$(mktemp -d)
+    SMOKE_OUTPUT=$(mktemp -d)
     cat > "$WORKDIR/invoke.yaml" << EOF
 code_dir: analysis
 notebooks_dir: notebooks
-source_data_dir: /data/source_data
-output_data_dir: /data/output_data
-phenotype_file: /data/source_data/smoke/phenotype.tsv
+source_data_dir: ${SMOKE_SOURCE}
+output_data_dir: ${SMOKE_OUTPUT}
+phenotype_file: ${SMOKE_SOURCE}/smoke/phenotype.tsv
 eeg_input_type: auto
 fmri_input_type: auto
 fmri_halfpipe_strategy: ${FMRI_HALFPIPE_STRATEGY}
@@ -118,7 +120,7 @@ n_permutations: ${N_PERMUTATIONS}
 EOF
 
 echo "[container] Configuration:"
-cat /app/invoke.yaml
+cat "$WORKDIR/invoke.yaml"
 echo ""
 
 exec invoke run-intersect run-load-eeg run-load-fmri run-predict run-notebooks
