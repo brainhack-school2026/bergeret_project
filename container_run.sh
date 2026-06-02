@@ -28,7 +28,7 @@ Usage (Singularity):
   singularity run \
     -B /path/to/source_data:/data/source_data \
     -B /path/to/output_data:/data/output_data \
-    brainhack_multimodal.sif [OPTIONS]
+    neuromeld.sif [OPTIONS]
 
 Input format (tsv vs MNE / Halfpipe) is detected automatically from source_data.
 

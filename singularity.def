@@ -2,9 +2,9 @@ Bootstrap: docker
 From: python:3.11-slim
 
 # Build from project root:
-#   singularity build brainhack_multimodal.sif singularity.def
+#   singularity build neuromeld.sif singularity.def
 # Or with fakeroot (no sudo needed):
-#   singularity build --fakeroot brainhack_multimodal.sif singularity.def
+#   singularity build --fakeroot neuromeld.sif singularity.def
 
 %files
     requirements.txt   /app/requirements.txt
@@ -26,22 +26,22 @@ From: python:3.11-slim
 
 %labels
     Author Pierre Bergeret
-    Project brainhack-2026-multimodal
+    Project NeuroMeld
 
 %help
     Multimodal EEG/fMRI fusion pipeline for psychiatric prediction.
     Input format (tsv / MNE / Halfpipe) is detected automatically.
 
     Smoke test (no data needed):
-        singularity run brainhack_multimodal.sif --smoke
+        singularity run neuromeld.sif --smoke
 
     Production run:
         singularity run \
           -B /path/to/source_data:/data/source_data \
           -B /path/to/output_data:/data/output_data \
-          brainhack_multimodal.sif \
+          neuromeld.sif \
           --target-column diagnosis \
           --model-type ridge \
           --n-permutations 500
 
-    All options: singularity run brainhack_multimodal.sif --help
+    All options: singularity run neuromeld.sif --help

@@ -1,4 +1,4 @@
-# brainhack-2026-multimodal
+# NeuroMeld
 
 <a href="https://github.com/pbergeret12">
   <img src="https://avatars.githubusercontent.com/u/81371004?v=4&s=100" width="100px;" alt=""/>
@@ -85,10 +85,10 @@ Input format (TSV vs MNE / Halfpipe) is **auto-detected** — no flag needed.
 **Option A — Docker first (build locally, run on HPC):**
 ```bash
 # 1. Build Docker image
-docker build -t brainhack-multimodal .
+docker build -t neuromeld .
 
 # 2. Convert to Singularity SIF
-singularity build brainhack_multimodal.sif docker-daemon://brainhack-multimodal:latest
+singularity build brainhack_multimodal.sif docker-daemon://neuromeld:latest
 
 # 3. Transfer the .sif to your HPC
 scp brainhack_multimodal.sif user@hpc.cluster.ca:~/projects/
@@ -130,7 +130,7 @@ All options:
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=brainhack-multimodal
+#SBATCH --job-name=neuromeld
 #SBATCH --time=12:00:00
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4

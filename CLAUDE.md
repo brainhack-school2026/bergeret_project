@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is **brainhack-2026-multimodal** — a reproducible multimodal EEG/fMRI fusion pipeline for psychiatric prediction, built for Brainhack School 2026. It is built on the [`invoke`](https://www.pyinvoke.org/) task runner. The `airoh` pip package provides reusable invoke tasks; this repo customizes them via `tasks.py` and `invoke.yaml`.
+This is **NeuroMeld** — a reproducible multimodal EEG/fMRI fusion pipeline for psychiatric prediction, built for Brainhack School 2026. It is built on the [`invoke`](https://www.pyinvoke.org/) task runner. The `airoh` pip package provides reusable invoke tasks; this repo customizes them via `tasks.py` and `invoke.yaml`.
 
 **Goal:** predict a configurable phenotypic target (e.g. diagnosis, age) using EEG features only, fMRI connectivity features only, and both combined — to compare modality contributions.
 
