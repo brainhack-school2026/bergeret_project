@@ -15,6 +15,7 @@ COPY container_run.sh .
 RUN chmod +x container_run.sh \
  && mkdir -p /data/source_data /data/output_data
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONNOUSERSITE=1
 
 ENTRYPOINT ["/app/container_run.sh"]

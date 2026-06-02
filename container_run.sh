@@ -63,12 +63,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cd /app
+# Run invoke from a tmpdir so invoke.yaml is always writable (Apptainer
+# mounts the container read-only by default).
+WORKDIR=$(mktemp -d)
+ln -s /app/tasks.py    "$WORKDIR/tasks.py"
+ln -s /app/analysis    "$WORKDIR/analysis"
+ln -s /app/notebooks   "$WORKDIR/notebooks"
+cd "$WORKDIR"
 
 # ── smoke test — no bind mounts needed ───────────────────────────────────────
 if [[ "${SMOKE}" == "1" ]]; then
     echo "[container] Smoke test mode — generating synthetic data and running pipeline"
-    cat > /app/invoke.yaml << EOF
+    cat > "$WORKDIR/invoke.yaml" << EOF
 code_dir: analysis
 notebooks_dir: notebooks
 source_data_dir: /data/source_data
@@ -94,7 +100,7 @@ if [[ ! -d "/data/source_data" ]] || [[ -z "$(ls -A /data/source_data 2>/dev/nul
     exit 1
 fi
 
-cat > /app/invoke.yaml << EOF
+cat > "$WORKDIR/invoke.yaml" << EOF
 code_dir: analysis
 notebooks_dir: notebooks
 source_data_dir: /data/source_data
