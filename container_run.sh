@@ -75,7 +75,9 @@ cd "$WORKDIR"
 if [[ "${SMOKE}" == "1" ]]; then
     echo "[container] Smoke test mode — generating synthetic data and running pipeline"
     SMOKE_SOURCE=$(mktemp -d)
-    SMOKE_OUTPUT=$(mktemp -d)
+    SMOKE_OUTPUT="${PWD}/neuromeld_output"
+    mkdir -p "${SMOKE_OUTPUT}"
+    echo "[container] Outputs → ${SMOKE_OUTPUT}"
     cat > "$WORKDIR/invoke.yaml" << EOF
 code_dir: analysis
 notebooks_dir: notebooks
