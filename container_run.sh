@@ -68,7 +68,7 @@ done
 WORKDIR=$(mktemp -d)
 ln -s /app/tasks.py    "$WORKDIR/tasks.py"
 ln -s /app/analysis    "$WORKDIR/analysis"
-ln -s /app/notebooks   "$WORKDIR/notebooks"
+cp -r /app/notebooks   "$WORKDIR/notebooks"
 cd "$WORKDIR"
 
 # ── smoke test — no bind mounts needed ───────────────────────────────────────
