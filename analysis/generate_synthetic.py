@@ -11,18 +11,19 @@ diagnosis removes only gender variance, leaving the diagnosis signal intact,
 and vice versa.  Both targets should achieve AUC > 0.5 in the smoke test.
 
 Produces all four input formats the pipeline accepts:
-  - phenotype.tsv     : balanced 50/50 diagnosis and gender; one subject has
-                        missing age (exercises confound-drop in run_intersect)
-  - eeg_features.tsv  : 50 EEG band-power features, ~2% NaN total
-                        (sparse + two entirely-NaN columns)
-  - mne_output/       : per-subject CSV mimicking MNE feature export
-                        (no NaN — exercises the clean path)
-  - fmri_features.tsv : 300 connectivity features, ~2% NaN total
-                        (sparse + three entirely-NaN columns)
-  - halfpipe_output/  : BIDS-compliant Halfpipe structure
-                        (ses-1/func/task-rest/, feature- tag, desc-correlation)
-                        subjects 1–5: 2 runs (run-merging path)
-                        subjects 1–3: NaN ROI pairs (group-imputation path)
+  - phenotype.tsv       : balanced 50/50 diagnosis and gender; one subject has
+                          missing age (exercises confound-drop in run_intersect)
+  - eeg_features.tsv    : 50 EEG band-power features, ~2% NaN total
+                          (sparse + two entirely-NaN columns)
+  - mne_bids_output/    : MNE-BIDS structure with real .fif files
+                          sub-{id}/ses-01/eeg/*_task-rest_eeg.fif
+                          (signal embedded in alpha/theta band power)
+  - fmri_features.tsv   : 300 connectivity features, ~2% NaN total
+                          (sparse + three entirely-NaN columns)
+  - halfpipe_output/    : BIDS-compliant Halfpipe structure
+                          (ses-1/func/task-rest/, feature- tag, desc-correlation)
+                          subjects 1–5: 2 runs (run-merging path)
+                          subjects 1–3: NaN ROI pairs (group-imputation path)
 """
 
 import json
@@ -138,52 +139,82 @@ def generate_phenotype(out_dir, n_subjects=N_SUBJECTS, seed=42):
     df.to_csv(out_path, sep="\t", index=False)
 
 
-def generate_eeg_tsv(out_dir, n_subjects=N_SUBJECTS, seed=42):
-    rng = np.random.default_rng(seed + 1)
-    ids = _subject_ids(n_subjects)
-    # EEG captures its own diagnostic component + gender, but NOT the fMRI component
-    sig_d_eeg = _signal_diag_eeg(n_subjects, seed)
-    sig_g = _signal_gender(n_subjects, seed)
-
-    w_d = rng.uniform(0.09, 0.13, len(EEG_FEATURE_NAMES))
-    w_g = rng.uniform(0.07, 0.11, len(EEG_FEATURE_NAMES))
-
-    data = (rng.standard_normal((n_subjects, len(EEG_FEATURE_NAMES)))
-            + np.outer(sig_d_eeg, w_d)
-            + np.outer(sig_g, w_g))
-
-    data = _add_sparse_nan(rng, data, _SPARSE_NAN_RATE)
-    all_nan_cols = rng.choice(len(EEG_FEATURE_NAMES), size=_N_ALL_NAN_EEG, replace=False)
-    data[:, all_nan_cols] = np.nan
-
-    df = pd.DataFrame(data, columns=EEG_FEATURE_NAMES)
-    df.insert(0, "participant_id", ids)
+def generate_eeg_tsv(out_dir, seed=42):
+    """
+    Extract band-power features from the MNE-BIDS .fif files and save as eeg_features.tsv.
+    Must be called after generate_mne_bids_output().
+    """
+    from analysis.load_eeg import load_eeg_mne
+    bids_dir = Path(out_dir) / "mne_bids_output"
+    df = load_eeg_mne(bids_dir)
     out_path = Path(out_dir) / "eeg_features.tsv"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, sep="\t", index=False)
 
 
-def generate_mne_output(out_dir, n_subjects=N_SUBJECTS, seed=42):
+def generate_mne_bids_output(out_dir, n_subjects=N_SUBJECTS, seed=42):
     """
-    One CSV per subject: mne_output/{sub_id}/{sub_id}_eeg_features.csv
-    One row, feature columns only (no participant_id), no NaN — clean path.
-    Same feature names as the TSV (same pipeline, different export format).
+    MNE-BIDS structure with real .fif files:
+        mne_bids_output/sub-{id}/ses-01/eeg/
+            sub-{id}_ses-01_task-rest_eeg.fif
+            sub-{id}_ses-01_task-rest_channels.tsv
+            sub-{id}_ses-01_task-rest_eeg.json
+
+    Latent signals are embedded as sinusoids in the EEG timeseries:
+      - diagnosis signal → alpha band (10 Hz amplitude modulation)
+      - gender signal    → theta band (6 Hz amplitude modulation)
+    This ensures the feature extractor recovers weakly predictive band-power features.
     """
+    import mne
+
+    sfreq = 256.0
+    duration = 60.0
+    n_times = int(sfreq * duration)
+    t = np.arange(n_times) / sfreq
+
+    info = mne.create_info(
+        ch_names=_EEG_CHANNELS, sfreq=sfreq, ch_types=["eeg"] * len(_EEG_CHANNELS)
+    )
+    mne.set_log_level("WARNING")
+
     rng = np.random.default_rng(seed + 2)
     ids = _subject_ids(n_subjects)
     sig_d_eeg = _signal_diag_eeg(n_subjects, seed)
     sig_g = _signal_gender(n_subjects, seed)
-    w_d = rng.uniform(0.09, 0.13, len(EEG_FEATURE_NAMES))
-    w_g = rng.uniform(0.07, 0.11, len(EEG_FEATURE_NAMES))
-    mne_dir = Path(out_dir) / "mne_output"
+    bids_dir = Path(out_dir) / "mne_bids_output"
+
     for i, sub_id in enumerate(ids):
-        sub_dir = mne_dir / sub_id
-        sub_dir.mkdir(parents=True, exist_ok=True)
-        features = (rng.standard_normal(len(EEG_FEATURE_NAMES))
-                    + sig_d_eeg[i] * w_d + sig_g[i] * w_g)
-        pd.DataFrame([features], columns=EEG_FEATURE_NAMES).to_csv(
-            sub_dir / f"{sub_id}_eeg_features.csv", index=False
-        )
+        eeg_dir = bids_dir / sub_id / "ses-01" / "eeg"
+        eeg_dir.mkdir(parents=True, exist_ok=True)
+
+        data = rng.standard_normal((len(_EEG_CHANNELS), n_times)) * 20e-6  # ~20 µV noise
+
+        # Embed diagnosis signal in alpha band (10 Hz)
+        alpha = sig_d_eeg[i] * np.sin(2 * np.pi * 10 * t)
+        for ch_idx in range(len(_EEG_CHANNELS)):
+            data[ch_idx] += alpha * rng.uniform(0.5, 1.5) * 3e-6
+
+        # Embed gender signal in theta band (6 Hz)
+        theta = sig_g[i] * np.sin(2 * np.pi * 6 * t)
+        for ch_idx in range(len(_EEG_CHANNELS)):
+            data[ch_idx] += theta * rng.uniform(0.5, 1.5) * 2e-6
+
+        raw = mne.io.RawArray(data, info, verbose=False)
+        raw.save(eeg_dir / f"{sub_id}_ses-01_task-rest_eeg.fif", overwrite=True, verbose=False)
+
+        pd.DataFrame({
+            "name": _EEG_CHANNELS,
+            "type": ["EEG"] * len(_EEG_CHANNELS),
+            "units": ["µV"] * len(_EEG_CHANNELS),
+            "sampling_frequency": [sfreq] * len(_EEG_CHANNELS),
+        }).to_csv(eeg_dir / f"{sub_id}_ses-01_task-rest_channels.tsv", sep="\t", index=False)
+
+        with open(eeg_dir / f"{sub_id}_ses-01_task-rest_eeg.json", "w") as f:
+            json.dump({
+                "TaskName": "rest",
+                "SamplingFrequency": sfreq,
+                "EEGChannelCount": len(_EEG_CHANNELS),
+                "RecordingDuration": duration,
+            }, f, indent=2)
 
 
 def generate_fmri_tsv(out_dir, n_subjects=N_SUBJECTS, seed=42):
@@ -278,8 +309,8 @@ def generate_all(out_dir, n_subjects=N_SUBJECTS, strategies=None, seed=42):
     """Generate all synthetic input formats into out_dir."""
     out_dir = Path(out_dir)
     generate_phenotype(out_dir, n_subjects=n_subjects, seed=seed)
-    generate_eeg_tsv(out_dir, n_subjects=n_subjects, seed=seed)
-    generate_mne_output(out_dir, n_subjects=n_subjects, seed=seed)
+    generate_mne_bids_output(out_dir, n_subjects=n_subjects, seed=seed)
+    generate_eeg_tsv(out_dir, seed=seed)  # derived from .fif files above
     generate_fmri_tsv(out_dir, n_subjects=n_subjects, seed=seed)
     generate_halfpipe_output(out_dir, n_subjects=n_subjects, strategies=strategies, seed=seed)
     print(f"[smoke] {n_subjects} synthetic subjects written to {out_dir}/")

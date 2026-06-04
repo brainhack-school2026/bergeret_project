@@ -9,7 +9,7 @@ Paths are configured in `invoke.yaml`.
 |---|---|
 | `phenotype.tsv` | One row per participant. Required columns: `participant_id`, `age`, `gender`, `study_site`, `diagnosis` (0/1). Additional columns are usable as prediction targets. |
 | `eeg_features.tsv` | *(EEG TSV mode)* Flat table: `participant_id` + one column per EEG feature. |
-| `mne_output/` | *(EEG MNE mode)* MNE feature export — one subfolder per subject, each containing `{sub_id}_eeg_features.csv` (one row, feature columns only). |
+| `mne_bids_output/` | *(EEG MNE mode)* MNE-BIDS directory — structure: `sub-{id}/[ses-{ses}/]eeg/*_task-{task}_eeg.fif`. Band-power features (delta/theta/alpha/beta/gamma per channel) are extracted automatically. Configure `eeg_mne_task` in `invoke.yaml` to select the task (default: `rest`). |
 | `fmri_features.tsv` | *(fMRI TSV mode)* Flat table: `participant_id` + one column per connectivity value (upper triangle of the ROI × ROI matrix). |
 | `halfpipe_output/` | *(fMRI Halfpipe mode)* Halfpipe BIDS derivatives — one subfolder per subject with structure `sub-{id}/ses-1/func/task-rest/`. Each run produces three files: `*_feature-{strategy}_atlas-{atlas}_desc-correlation_matrix.tsv` (no header, raw numbers), `*_timeseries.tsv` (timepoints × ROIs, with ROI headers), `*_timeseries.json` (mean_fd, max_fd, fd_perc, n_timepoints, tr). |
 

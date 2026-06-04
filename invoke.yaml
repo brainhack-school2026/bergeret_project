@@ -13,10 +13,12 @@ output_data_dir: output_data
 
 phenotype_file: source_data/phenotype.tsv
 
-# EEG: set eeg_input_type to "tsv" (flat feature table) or "mne" (MNE output folder)
+# EEG: set eeg_input_type to "tsv" (flat feature table) or "mne" (MNE-BIDS folder with .fif files)
 eeg_input_type: auto
 eeg_tsv: source_data/eeg_features.tsv
-eeg_mne_dir: source_data/mne_output
+eeg_mne_dir: source_data/mne_bids_output
+# BIDS task label to load from .fif files (default: rest)
+eeg_mne_task: rest
 
 # fMRI: set fmri_input_type to "tsv" (flat connectivity table) or "halfpipe" (Halfpipe output)
 fmri_input_type: auto
@@ -40,4 +42,4 @@ cv_inner_folds: 5
 pca_variance: 0.95
 
 # Number of permutations for the null distribution (p-value vs chance)
-n_permutations: 500
+n_permutations: 100

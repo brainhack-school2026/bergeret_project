@@ -38,7 +38,7 @@ uv sync
 uv run invoke run-smoke
 
 # 3. Switch to real data
-#    - Edit invoke.yaml: set phenotype_file, eeg_tsv / eeg_mne_dir,
+#    - Edit invoke.yaml: set phenotype_file, eeg_tsv / eeg_mne_dir (MNE-BIDS),
 #      fmri_tsv / fmri_halfpipe_dir, eeg_input_type, fmri_input_type
 #    - Place your data files in source_data/ (see source_data/CONTENT.md)
 uv run invoke clean       # remove smoke outputs so the real run is not skipped
@@ -111,14 +111,14 @@ singularity run \
   brainhack_multimodal.sif \
   --target-column diagnosis \
   --model-type ridge \
-  --n-permutations 500
+  --n-permutations 100
 ```
 
 All options:
 ```
 --target-column STR          Column to predict                    [diagnosis]
 --model-type STR             logistic|ridge|elasticnet|svm|rf     [ridge]
---n-permutations INT         Permutations for null distribution    [500]
+--n-permutations INT         Permutations for null distribution    [100]
 --fmri-halfpipe-strategy STR Halfpipe denoising strategy tag      [Baseline]
 --cv-outer-folds INT         Outer CV folds                        [5]
 --cv-inner-folds INT         Inner CV folds                        [5]
@@ -140,7 +140,7 @@ singularity run \
   -B $SLURM_SUBMIT_DIR/output_data:/data/output_data \
   brainhack_multimodal.sif \
   --target-column diagnosis \
-  --n-permutations 500
+  --n-permutations 100
 ```
 
 ---
@@ -154,7 +154,7 @@ The pipeline accepts two input formats for each modality:
 
 | Modality | Format A | Format B |
 |---|---|---|
-| EEG | `eeg_features.tsv` (flat table) | `mne_output/` (MNE feature export folder) |
+| EEG | `eeg_features.tsv` (flat table) | MNE-BIDS folder — `sub-*/[ses-*/]eeg/*_eeg.fif` (band-power features extracted automatically) |
 | fMRI | `fmri_features.tsv` (flat table) | `halfpipe_output/` (Halfpipe connectivity matrices) |
 
 Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"` / `"halfpipe"`.

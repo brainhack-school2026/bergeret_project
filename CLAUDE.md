@@ -9,12 +9,12 @@ This is **NeuroMeld** — a reproducible multimodal EEG/fMRI fusion pipeline for
 **Goal:** predict a configurable phenotypic target (e.g. diagnosis, age) using EEG features only, fMRI connectivity features only, and both combined — to compare modality contributions.
 
 **Input formats:** the pipeline accepts flat TSVs or raw tool outputs for each modality:
-- EEG: `eeg_features.tsv` OR `mne_output/` (MNE feature export, one CSV per subject)
-- fMRI: `fmri_features.tsv` OR `halfpipe_output/` (Halfpipe connectivity matrices, one TSV per subject/run/strategy)
+- EEG: `eeg_features.tsv` OR a MNE-BIDS directory (`sub-*/[ses-*/]eeg/*_eeg.fif`) — band-power features (delta/theta/alpha/beta/gamma × channel) are extracted automatically via `load_eeg_mne()`. Configure `eeg_mne_task` in `invoke.yaml` to select the BIDS task label (default: `rest`).
+- fMRI: `fmri_features.tsv` OR a Halfpipe derivatives directory (detected by presence of `*_desc-correlation_matrix.tsv` files under `sub-*` dirs)
 
 **Chunk concept:** subjects (`participant_id`) are the unit of processing.
 
-**Smoke data:** `invoke generate-smoke-data` populates `source_data/smoke/` with 30 synthetic subjects in all four input formats. `invoke run-smoke` uses this data to test the pipeline end-to-end. The synthetic data includes ~2% NaN (sparse values + deliberately all-NaN columns), one subject with missing age (exercises confound-drop in `run_intersect`), and two independent latent signals so both `diagnosis` and `gender` targets are weakly predictable even after confound correction.
+**Smoke data:** `invoke generate-smoke-data` populates `source_data/smoke/` with 30 synthetic subjects in all four input formats. `invoke run-smoke` uses this data to test the pipeline end-to-end. The MNE-BIDS smoke data contains real `.fif` files generated with `mne.io.RawArray`; the EEG TSV is derived from them by running the same feature extractor. The synthetic data includes ~2% NaN in fMRI features, one subject with missing age (exercises confound-drop in `run_intersect`), and two independent latent signals so both `diagnosis` and `age` targets are weakly predictable even after confound correction.
 
 ## Persona
 

@@ -8,7 +8,7 @@ def fetch(c):
     """Print instructions for placing real source data."""
     print("Place your data files in source_data/ (or update paths in invoke.yaml):")
     print("  phenotype.tsv       — participants x phenotypic variables")
-    print("  eeg_features.tsv    — OR set eeg_input_type=mne and eeg_mne_dir in invoke.yaml")
+    print("  eeg_features.tsv    — OR set eeg_input_type=mne and eeg_mne_dir (MNE-BIDS folder with .fif files) in invoke.yaml")
     print("  fmri_features.tsv   — OR set fmri_input_type=halfpipe and fmri_halfpipe_dir in invoke.yaml")
 
 
@@ -77,33 +77,58 @@ def run_intersect(c, smoke=False):
     )
 
 
-def _detect_input_type(search_dir: Path, modality: str) -> tuple[str, Path]:
-    """Auto-detect EEG or fMRI input format by inspecting search_dir.
+def _find_sub_root(file_path: Path) -> Path:
+    """Walk up from file_path to find the directory that directly contains sub-* dirs."""
+    p = file_path.parent
+    while p != p.parent:
+        if p.name.startswith("sub-"):
+            return p.parent
+        p = p.parent
+    raise ValueError(f"Could not find a sub-* directory in the path: {file_path}")
 
-    EEG: looks for 'eeg_features.tsv' (→ tsv) then 'mne_output/' (→ mne).
-    fMRI: looks for 'fmri_features.tsv' (→ tsv) then 'halfpipe_output/' (→ halfpipe).
-    TSV takes priority when both are present.
+
+def _detect_input_type(search_dir: Path, modality: str) -> tuple[str, Path]:
+    """Auto-detect EEG or fMRI input format by inspecting the contents of search_dir.
+
+    EEG:  looks for 'eeg_features.tsv' (flat TSV) or files matching
+          '*_eeg.fif' nested under sub-* dirs (MNE-BIDS per-subject .fif files).
+    fMRI: looks for 'fmri_features.tsv' (flat TSV) or files matching
+          '*_desc-correlation_matrix.tsv' nested under sub-* dirs (Halfpipe outputs).
+    Flat TSV takes priority when both are present.
     """
+    search_dir = Path(search_dir)
+
     if modality == "eeg":
         if (search_dir / "eeg_features.tsv").exists():
             detected = ("tsv", search_dir / "eeg_features.tsv")
-        elif (search_dir / "mne_output").is_dir():
-            detected = ("mne", search_dir / "mne_output")
         else:
-            raise FileNotFoundError(
-                f"No EEG input found in {search_dir} — "
-                "expected 'eeg_features.tsv' or 'mne_output/'"
-            )
+            hits = list(search_dir.rglob("*_eeg.fif"))
+            if hits:
+                root = _find_sub_root(hits[0])
+                detected = ("mne", root)
+            else:
+                raise FileNotFoundError(
+                    f"No EEG data found in {search_dir}.\n"
+                    "Expected one of:\n"
+                    "  • eeg_features.tsv                      — flat feature table (participants × features)\n"
+                    "  • sub-*/[ses-*/]eeg/*_eeg.fif           — MNE-BIDS per-subject .fif files"
+                )
     else:
         if (search_dir / "fmri_features.tsv").exists():
             detected = ("tsv", search_dir / "fmri_features.tsv")
-        elif (search_dir / "halfpipe_output").is_dir():
-            detected = ("halfpipe", search_dir / "halfpipe_output")
         else:
-            raise FileNotFoundError(
-                f"No fMRI input found in {search_dir} — "
-                "expected 'fmri_features.tsv' or 'halfpipe_output/'"
-            )
+            hits = list(search_dir.rglob("*_desc-correlation_matrix.tsv"))
+            if hits:
+                root = _find_sub_root(hits[0])
+                detected = ("halfpipe", root)
+            else:
+                raise FileNotFoundError(
+                    f"No fMRI data found in {search_dir}.\n"
+                    "Expected one of:\n"
+                    "  • fmri_features.tsv                                    — flat feature table\n"
+                    "  • sub-*/**/task-rest/*_desc-correlation_matrix.tsv     — Halfpipe outputs"
+                )
+
     print(f"[auto-detect] {modality.upper()} → {detected[0]} ({detected[1]})", flush=True)
     return detected
 
@@ -157,7 +182,8 @@ def run_load_eeg(c, subjects=None, smoke=False):
 
     output_data_dir = Path(c.config.get("output_data_dir"))
     subjects_list = subjects.split(",") if subjects else _load_subjects(output_data_dir)
-    df = load_eeg(path, input_type=eeg_type, subjects=subjects_list)
+    eeg_task = c.config.get("eeg_mne_task", "rest")
+    df = load_eeg(path, input_type=eeg_type, subjects=subjects_list, task=eeg_task)
     df.to_csv(out_path, sep="\t", index=False)
     print(f"[run-load-eeg] {len(df)} subjects, {len(df.columns) - 1} features → {out_path}")
 

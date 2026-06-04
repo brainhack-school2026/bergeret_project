@@ -15,9 +15,10 @@ MODEL_TYPE="ridge"
 CV_OUTER_FOLDS="5"
 CV_INNER_FOLDS="5"
 PCA_VARIANCE="0.95"
-N_PERMUTATIONS="500"
+N_PERMUTATIONS="100"
 FMRI_HALFPIPE_STRATEGY="Baseline"
 SMOKE="0"
+OUTPUT_DIR=""
 
 # ── help ──────────────────────────────────────────────────────────────────────
 usage() {
@@ -42,6 +43,7 @@ Options:
   --cv-inner-folds INT         Inner CV folds (hyperparameter)     [5]
   --pca-variance FLOAT         PCA explained variance threshold    [0.95]
   --smoke                      Self-contained smoke test (no mounts needed)
+  --output-dir PATH            Save smoke outputs to PATH (default: ephemeral)
   --help                       Show this message
 EOF
 exit 0
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
         --n-permutations)          N_PERMUTATIONS="$2";          shift 2 ;;
         --fmri-halfpipe-strategy)  FMRI_HALFPIPE_STRATEGY="$2";  shift 2 ;;
         --smoke)                   SMOKE="1";                    shift   ;;
+        --output-dir)              OUTPUT_DIR="$2";              shift 2 ;;
         --help|-h)                 usage ;;
         *) echo "[container] Unknown argument: $1" >&2; exit 1 ;;
     esac
@@ -73,11 +76,15 @@ cd "$WORKDIR"
 
 # ── smoke test — no bind mounts needed ───────────────────────────────────────
 if [[ "${SMOKE}" == "1" ]]; then
-    echo "[container] Smoke test mode — generating synthetic data and running pipeline"
     SMOKE_SOURCE=$(mktemp -d)
-    SMOKE_OUTPUT="${PWD}/neuromeld_output"
-    mkdir -p "${SMOKE_OUTPUT}"
-    echo "[container] Outputs → ${SMOKE_OUTPUT}"
+    if [[ -n "${OUTPUT_DIR}" ]]; then
+        SMOKE_OUTPUT="${OUTPUT_DIR}"
+        mkdir -p "${SMOKE_OUTPUT}"
+        echo "[container] Smoke test mode — outputs → ${SMOKE_OUTPUT}"
+    else
+        SMOKE_OUTPUT=$(mktemp -d)
+        echo "[container] Smoke test mode — ephemeral (use --output-dir PATH to keep outputs)"
+    fi
     cat > "$WORKDIR/invoke.yaml" << EOF
 code_dir: analysis
 notebooks_dir: notebooks
