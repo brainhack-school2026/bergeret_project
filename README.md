@@ -11,7 +11,13 @@ PhD Student in Psychiatry at the Université de Montréal specialized in neuroim
 
 ### Project slides
 
+First presentation:
+
 https://docs.google.com/presentation/d/1ZMddc8o5beXn3dZDECPOYwVRuh-DVODSOPS99YFSp7M/edit?slide=id.p#slide=id.p
+
+Final presentation:
+
+https://docs.google.com/presentation/d/1_PjdkNkijDH6QF2Ss8QrRItPPI3XfQpy/edit?slide=id.p1#slide=id.p1
 
 ---
 
