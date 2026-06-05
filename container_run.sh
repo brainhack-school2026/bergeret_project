@@ -17,6 +17,8 @@ CV_INNER_FOLDS="5"
 PCA_VARIANCE="0.95"
 N_PERMUTATIONS="100"
 FMRI_HALFPIPE_STRATEGY="Baseline"
+EEG_PATH="/data/source_data/eeg_features.tsv"
+FMRI_PATH="/data/source_data"
 SMOKE="0"
 OUTPUT_DIR=""
 
@@ -31,13 +33,18 @@ Usage (Singularity):
     -B /path/to/output_data:/data/output_data \
     neuromeld.sif [OPTIONS]
 
-Input format (tsv vs MNE / Halfpipe) is detected automatically from source_data.
+Input format is detected automatically from the path:
+  file  → flat TSV  |  directory → MNE-BIDS (EEG) or Halfpipe (fMRI)
 
 Options:
+  --eeg-path PATH              Path to EEG data: .tsv file or MNE-BIDS directory
+                               [/data/source_data/eeg_features.tsv]
+  --fmri-path PATH             Path to fMRI data: .tsv file or Halfpipe directory
+                               [/data/source_data/fmri_features.tsv]
   --target-column STR          Phenotype column to predict        [diagnosis]
   --model-type STR             logistic|ridge|elasticnet|          [ridge]
                                svm|random_forest
-  --n-permutations INT         Permutations for p-value vs chance  [500]
+  --n-permutations INT         Permutations for p-value vs chance  [100]
   --fmri-halfpipe-strategy STR Halfpipe denoising strategy tag     [Baseline]
   --cv-outer-folds INT         Outer CV folds                      [5]
   --cv-inner-folds INT         Inner CV folds (hyperparameter)     [5]
@@ -52,15 +59,17 @@ exit 0
 # ── parse arguments ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --target-column)           TARGET_COLUMN="$2";           shift 2 ;;
-        --model-type)              MODEL_TYPE="$2";              shift 2 ;;
-        --cv-outer-folds)          CV_OUTER_FOLDS="$2";          shift 2 ;;
-        --cv-inner-folds)          CV_INNER_FOLDS="$2";          shift 2 ;;
-        --pca-variance)            PCA_VARIANCE="$2";            shift 2 ;;
-        --n-permutations)          N_PERMUTATIONS="$2";          shift 2 ;;
-        --fmri-halfpipe-strategy)  FMRI_HALFPIPE_STRATEGY="$2";  shift 2 ;;
-        --smoke)                   SMOKE="1";                    shift   ;;
-        --output-dir)              OUTPUT_DIR="$2";              shift 2 ;;
+        --eeg-path)                EEG_PATH="$2";               shift 2 ;;
+        --fmri-path)               FMRI_PATH="$2";              shift 2 ;;
+        --target-column)           TARGET_COLUMN="$2";          shift 2 ;;
+        --model-type)              MODEL_TYPE="$2";             shift 2 ;;
+        --cv-outer-folds)          CV_OUTER_FOLDS="$2";         shift 2 ;;
+        --cv-inner-folds)          CV_INNER_FOLDS="$2";         shift 2 ;;
+        --pca-variance)            PCA_VARIANCE="$2";           shift 2 ;;
+        --n-permutations)          N_PERMUTATIONS="$2";         shift 2 ;;
+        --fmri-halfpipe-strategy)  FMRI_HALFPIPE_STRATEGY="$2"; shift 2 ;;
+        --smoke)                   SMOKE="1";                   shift   ;;
+        --output-dir)              OUTPUT_DIR="$2";             shift 2 ;;
         --help|-h)                 usage ;;
         *) echo "[container] Unknown argument: $1" >&2; exit 1 ;;
     esac
@@ -91,8 +100,9 @@ notebooks_dir: notebooks
 source_data_dir: ${SMOKE_SOURCE}
 output_data_dir: ${SMOKE_OUTPUT}
 phenotype_file: ${SMOKE_SOURCE}/smoke/phenotype.tsv
-eeg_input_type: auto
-fmri_input_type: auto
+eeg_path: ${SMOKE_SOURCE}/smoke/eeg_features.tsv
+fmri_path: ${SMOKE_SOURCE}/smoke/fmri_features.tsv
+eeg_mne_task: rest
 fmri_halfpipe_strategy: ${FMRI_HALFPIPE_STRATEGY}
 target_column: ${TARGET_COLUMN}
 model_type: ${MODEL_TYPE}
@@ -117,8 +127,9 @@ notebooks_dir: notebooks
 source_data_dir: /data/source_data
 output_data_dir: /data/output_data
 phenotype_file: /data/source_data/phenotype.tsv
-eeg_input_type: auto
-fmri_input_type: auto
+eeg_path: ${EEG_PATH}
+fmri_path: ${FMRI_PATH}
+eeg_mne_task: rest
 fmri_halfpipe_strategy: ${FMRI_HALFPIPE_STRATEGY}
 target_column: ${TARGET_COLUMN}
 model_type: ${MODEL_TYPE}

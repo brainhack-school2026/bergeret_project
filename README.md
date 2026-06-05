@@ -38,9 +38,8 @@ uv sync
 uv run invoke run-smoke
 
 # 3. Switch to real data
-#    - Edit invoke.yaml: set phenotype_file, eeg_tsv / eeg_mne_dir (MNE-BIDS),
-#      fmri_tsv / fmri_halfpipe_dir, eeg_input_type, fmri_input_type
-#    - Place your data files in source_data/ (see source_data/CONTENT.md)
+#    - Edit invoke.yaml: set phenotype_file, eeg_path, fmri_path
+#      (point each to a .tsv file or a directory — format is auto-detected)
 uv run invoke clean       # remove smoke outputs so the real run is not skipped
 uv run invoke run         # full pipeline with your data
 ```
@@ -109,13 +108,21 @@ singularity run \
   -B /path/to/source_data:/data/source_data \
   -B /path/to/output_data:/data/output_data \
   brainhack_multimodal.sif \
+  --eeg-path  /data/source_data/eeg_features.tsv \
+  --fmri-path /data/source_data/halfpipe_output/ \
   --target-column diagnosis \
   --model-type ridge \
   --n-permutations 100
 ```
 
+`--eeg-path` and `--fmri-path` accept any file (flat TSV) or directory (MNE-BIDS / Halfpipe) — format is auto-detected. They default to `/data/source_data/eeg_features.tsv` and `/data/source_data/fmri_features.tsv`.
+
 All options:
 ```
+--eeg-path PATH              EEG data: .tsv file or MNE-BIDS directory
+                             [/data/source_data/eeg_features.tsv]
+--fmri-path PATH             fMRI data: .tsv file or Halfpipe directory
+                             [/data/source_data/fmri_features.tsv]
 --target-column STR          Column to predict                    [diagnosis]
 --model-type STR             logistic|ridge|elasticnet|svm|rf     [ridge]
 --n-permutations INT         Permutations for null distribution    [100]
@@ -139,6 +146,8 @@ singularity run \
   -B $SLURM_SUBMIT_DIR/source_data:/data/source_data \
   -B $SLURM_SUBMIT_DIR/output_data:/data/output_data \
   brainhack_multimodal.sif \
+  --eeg-path  /data/source_data/eeg_features.tsv \
+  --fmri-path /data/source_data/halfpipe_output/ \
   --target-column diagnosis \
   --n-permutations 100
 ```
@@ -147,17 +156,24 @@ singularity run \
 
 ## Data inputs
 
-Place your data files in `source_data/` and configure paths in `invoke.yaml`.
+Configure `eeg_path` and `fmri_path` in `invoke.yaml` to point to your data.
 See [`source_data/CONTENT.md`](source_data/CONTENT.md) for the expected formats.
 
-The pipeline accepts two input formats for each modality:
+The format is **auto-detected from the path** — no extra flag needed:
 
-| Modality | Format A | Format B |
-|---|---|---|
-| EEG | `eeg_features.tsv` (flat table) | MNE-BIDS folder — `sub-*/[ses-*/]eeg/*_eeg.fif` (band-power features extracted automatically) |
-| fMRI | `fmri_features.tsv` (flat table) | `halfpipe_output/` (Halfpipe connectivity matrices) |
+| `eeg_path` / `fmri_path` value | Detected as |
+|---|---|
+| Path to a file (any name) | flat TSV — `participant_id` + one column per feature |
+| Path to a directory containing `sub-*/eeg/*_eeg.fif` | MNE-BIDS — band-power features extracted automatically |
+| Path to a directory containing `sub-*/**/task-rest/*_desc-correlation_matrix.tsv` | Halfpipe derivatives |
 
-Set `eeg_input_type` and `fmri_input_type` in `invoke.yaml` to `"tsv"` or `"mne"` / `"halfpipe"`.
+```yaml
+# invoke.yaml examples
+eeg_path: /data/my_eeg_table.tsv          # flat TSV, any filename
+eeg_path: /data/bids_dataset/             # MNE-BIDS directory
+fmri_path: /data/connectivity_matrix.tsv  # flat TSV, any filename
+fmri_path: /data/halfpipe_output/         # Halfpipe directory
+```
 
 ---
 
@@ -196,9 +212,10 @@ All settings live in `invoke.yaml`. Key options for the prediction step:
 | `cv_inner_folds` | `5` | Number of inner folds (hyperparameter tuning, optimises AUC / neg-MAE) |
 | `pca_variance` | `0.95` | Fraction of variance retained by PCA per modality |
 | `n_permutations` | `100` | Number of permutations for the null distribution (p-value vs chance) — use ≥500 for publication |
-| `eeg_input_type` | `tsv` | EEG input format: `tsv` or `mne` |
-| `fmri_input_type` | `tsv` | fMRI input format: `tsv` or `halfpipe` |
-| `fmri_halfpipe_strategy` | `36P` | Halfpipe denoising strategy tag (e.g. `36P`, `aCompCor`) |
+| `eeg_path` | `source_data/eeg_features.tsv` | Path to EEG data: a `.tsv` file or a MNE-BIDS directory |
+| `fmri_path` | `source_data/fmri_features.tsv` | Path to fMRI data: a `.tsv` file or a Halfpipe directory |
+| `fmri_halfpipe_strategy` | `Baseline` | Halfpipe denoising strategy tag (e.g. `Baseline`, `36P`, `aCompCor`) — only used when `fmri_path` is a directory |
+| `eeg_mne_task` | `rest` | BIDS task label for `.fif` files — only used when `eeg_path` is a directory |
 
 ---
 

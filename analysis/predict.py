@@ -190,12 +190,12 @@ def _extract_feature_importance(gs, pca: PCA):
     """
     Project model importance back to original feature space via PCA loadings.
 
-    For linear models (coef_): weight vector in standardised PCA space is
-    divided by the scaler's scale then dotted with |pca.components_| to obtain
-    per-original-feature importance magnitudes.
-
-    For RandomForest (feature_importances_): MDI scores in PCA space are
-    distributed back to original features proportionally to loading magnitudes.
+    Pipeline order is scaler → pca → model, so:
+    - For linear models (coef_): importance in PCA space is projected back to
+      scaled-feature space via |pca.components_|, then divided by scaler.scale_
+      to reach the original feature space.
+    - For RandomForest (feature_importances_): MDI scores in PCA space are
+      distributed back to original features proportionally to loading magnitudes.
 
     Returns None for SVM RBF (no analytic importance available).
     """
@@ -206,9 +206,9 @@ def _extract_feature_importance(gs, pca: PCA):
 
     if hasattr(model, "coef_"):
         coef = np.atleast_2d(model.coef_)           # (n_classes_or_1, n_components)
-        coef_1d = np.mean(np.abs(coef), axis=0)     # average across classes
-        coef_raw = coef_1d / scaler.scale_           # undo StandardScaler
-        return coef_raw @ loadings                   # (n_features,)
+        coef_1d = np.mean(np.abs(coef), axis=0)     # (n_components,)
+        # Project PCA space → scaled-feature space → original feature space
+        return (coef_1d @ loadings) / scaler.scale_  # (n_features,)
 
     if hasattr(model, "feature_importances_"):
         return model.feature_importances_ @ loadings  # (n_features,)
@@ -253,14 +253,14 @@ def _run_nested_cv(
         X_tr = imputer.fit_transform(X_tr)
         X_te = imputer.transform(X_te)
 
-        # PCA fitted only on training data
+        # Correct pipeline order: scale first, then PCA, then model.
+        # Scaling AFTER PCA (old order) would normalise each PC to unit variance,
+        # amplifying noise components (low-variance PCs) as much as signal
+        # components and destroying the signal for subtle targets (e.g. ADHD).
         n_components = min(pca_variance, X_tr.shape[0] - 1, X_tr.shape[1])
-        pca = PCA(n_components=n_components, random_state=random_state)
-        X_tr_pca = pca.fit_transform(X_tr)
-        X_te_pca = pca.transform(X_te)
-
         pipe = Pipeline([
             ("scaler", StandardScaler()),
+            ("pca", PCA(n_components=n_components, random_state=random_state)),
             ("model", estimator),
         ])
 
@@ -274,14 +274,15 @@ def _run_nested_cv(
                 n_jobs=-1,
                 refit=True,
             )
-            gs.fit(X_tr_pca, y_tr)
+            gs.fit(X_tr, y_tr)
 
-        y_pred = gs.predict(X_te_pca)
-        y_score = gs.predict_proba(X_te_pca) if is_clf and hasattr(gs, "predict_proba") else None
+        y_pred = gs.predict(X_te)
+        y_score = gs.predict_proba(X_te) if is_clf and hasattr(gs, "predict_proba") else None
         fold_scores.append(_score(y_te, y_pred, task_type, y_score=y_score))
 
         if return_importances:
-            fold_importances.append(_extract_feature_importance(gs, pca))
+            pca_fitted = gs.best_estimator_.named_steps["pca"]
+            fold_importances.append(_extract_feature_importance(gs, pca_fitted))
 
     if return_importances:
         return fold_scores, fold_importances

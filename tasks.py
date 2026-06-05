@@ -5,11 +5,13 @@ from invoke import task
 
 @task
 def fetch(c):
-    """Print instructions for placing real source data."""
-    print("Place your data files in source_data/ (or update paths in invoke.yaml):")
-    print("  phenotype.tsv       — participants x phenotypic variables")
-    print("  eeg_features.tsv    — OR set eeg_input_type=mne and eeg_mne_dir (MNE-BIDS folder with .fif files) in invoke.yaml")
-    print("  fmri_features.tsv   — OR set fmri_input_type=halfpipe and fmri_halfpipe_dir in invoke.yaml")
+    """Print instructions for configuring real source data."""
+    print("Set your data paths in invoke.yaml:")
+    print("  phenotype_file: path/to/phenotype.tsv")
+    print("  eeg_path:       path/to/eeg_features.tsv      # flat TSV")
+    print("                  path/to/mne_bids_dir/          # or MNE-BIDS directory with sub-*/eeg/*.fif")
+    print("  fmri_path:      path/to/fmri_features.tsv     # flat TSV")
+    print("                  path/to/halfpipe_output/       # or Halfpipe derivatives directory")
 
 
 @task
@@ -87,74 +89,63 @@ def _find_sub_root(file_path: Path) -> Path:
     raise ValueError(f"Could not find a sub-* directory in the path: {file_path}")
 
 
-def _detect_input_type(search_dir: Path, modality: str) -> tuple[str, Path]:
-    """Auto-detect EEG or fMRI input format by inspecting the contents of search_dir.
+def _detect_input_type(path: Path, modality: str) -> tuple[str, Path]:
+    """Detect input type from the user-provided path.
 
-    EEG:  looks for 'eeg_features.tsv' (flat TSV) or files matching
-          '*_eeg.fif' nested under sub-* dirs (MNE-BIDS per-subject .fif files).
-    fMRI: looks for 'fmri_features.tsv' (flat TSV) or files matching
-          '*_desc-correlation_matrix.tsv' nested under sub-* dirs (Halfpipe outputs).
-    Flat TSV takes priority when both are present.
+    - File → tsv mode (any filename, any extension — user points directly to their table).
+    - Directory → inspect contents:
+        EEG:  *_eeg.fif files present → mne mode
+        fMRI: *_desc-correlation_matrix.tsv files present → halfpipe mode
     """
-    search_dir = Path(search_dir)
+    path = Path(path)
 
-    if modality == "eeg":
-        if (search_dir / "eeg_features.tsv").exists():
-            detected = ("tsv", search_dir / "eeg_features.tsv")
-        else:
-            hits = list(search_dir.rglob("*_eeg.fif"))
+    if path.is_file():
+        print(f"[auto-detect] {modality.upper()} → tsv ({path})", flush=True)
+        return ("tsv", path)
+
+    if path.is_dir():
+        if modality == "eeg":
+            hits = list(path.rglob("*_eeg.fif"))
             if hits:
                 root = _find_sub_root(hits[0])
-                detected = ("mne", root)
-            else:
-                raise FileNotFoundError(
-                    f"No EEG data found in {search_dir}.\n"
-                    "Expected one of:\n"
-                    "  • eeg_features.tsv                      — flat feature table (participants × features)\n"
-                    "  • sub-*/[ses-*/]eeg/*_eeg.fif           — MNE-BIDS per-subject .fif files"
-                )
-    else:
-        if (search_dir / "fmri_features.tsv").exists():
-            detected = ("tsv", search_dir / "fmri_features.tsv")
+                print(f"[auto-detect] EEG → mne ({root})", flush=True)
+                return ("mne", root)
+            raise FileNotFoundError(
+                f"No MNE-BIDS .fif files found under {path}.\n"
+                "Expected sub-*/[ses-*/]eeg/*_eeg.fif files.\n"
+                "If your EEG data is a flat TSV, set eeg_path to the file path in invoke.yaml."
+            )
         else:
-            hits = list(search_dir.rglob("*_desc-correlation_matrix.tsv"))
+            hits = list(path.rglob("*_desc-correlation_matrix.tsv"))
             if hits:
                 root = _find_sub_root(hits[0])
-                detected = ("halfpipe", root)
-            else:
-                raise FileNotFoundError(
-                    f"No fMRI data found in {search_dir}.\n"
-                    "Expected one of:\n"
-                    "  • fmri_features.tsv                                    — flat feature table\n"
-                    "  • sub-*/**/task-rest/*_desc-correlation_matrix.tsv     — Halfpipe outputs"
-                )
+                print(f"[auto-detect] fMRI → halfpipe ({root})", flush=True)
+                return ("halfpipe", root)
+            raise FileNotFoundError(
+                f"No Halfpipe correlation matrix files found under {path}.\n"
+                "Expected sub-*/**/task-rest/*_desc-correlation_matrix.tsv files.\n"
+                "If your fMRI data is a flat TSV, set fmri_path to the file path in invoke.yaml."
+            )
 
-    print(f"[auto-detect] {modality.upper()} → {detected[0]} ({detected[1]})", flush=True)
-    return detected
+    raise FileNotFoundError(
+        f"Path not found: {path}\n"
+        f"Set {'eeg_path' if modality == 'eeg' else 'fmri_path'} in invoke.yaml."
+    )
 
 
 def _resolve_path(c, modality: str, smoke_dir: Path | None = None) -> tuple[str, Path]:
     """Return (input_type, path) for a given modality.
 
-    In smoke mode (smoke_dir provided): always auto-detect from smoke_dir.
-    Otherwise: auto-detect from source_data_dir when input_type is 'auto',
-    or use the explicit config paths.
+    In smoke mode: use the flat TSV generated by generate-smoke-data (fixed names).
+    Otherwise: read eeg_path / fmri_path from invoke.yaml and detect from the path itself.
     """
     if smoke_dir is not None:
-        return _detect_input_type(smoke_dir, modality)
+        tsv = smoke_dir / ("eeg_features.tsv" if modality == "eeg" else "fmri_features.tsv")
+        return ("tsv", tsv)
 
-    if modality == "eeg":
-        input_type = c.config.get("eeg_input_type", "auto")
-        if input_type == "auto":
-            return _detect_input_type(Path(c.config.get("source_data_dir")), "eeg")
-        path = Path(c.config.get("eeg_mne_dir") if input_type == "mne" else c.config.get("eeg_tsv"))
-        return input_type, path
-
-    input_type = c.config.get("fmri_input_type", "auto")
-    if input_type == "auto":
-        return _detect_input_type(Path(c.config.get("source_data_dir")), "fmri")
-    path = Path(c.config.get("fmri_halfpipe_dir") if input_type == "halfpipe" else c.config.get("fmri_tsv"))
-    return input_type, path
+    path_key = "eeg_path" if modality == "eeg" else "fmri_path"
+    path = Path(c.config.get(path_key))
+    return _detect_input_type(path, modality)
 
 
 def _load_subjects(output_data_dir: Path) -> list[str] | None:

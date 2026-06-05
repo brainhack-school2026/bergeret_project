@@ -5,13 +5,16 @@ Paths are configured in `invoke.yaml`.
 
 ## Expected files (real data)
 
+Set `eeg_path` and `fmri_path` in `invoke.yaml` to point to your actual data.
+Format is auto-detected: a file path → flat TSV; a directory path → MNE-BIDS or Halfpipe.
+
 | File / Folder | Description |
 |---|---|
-| `phenotype.tsv` | One row per participant. Required columns: `participant_id`, `age`, `gender`, `study_site`, `diagnosis` (0/1). Additional columns are usable as prediction targets. |
-| `eeg_features.tsv` | *(EEG TSV mode)* Flat table: `participant_id` + one column per EEG feature. |
-| `mne_bids_output/` | *(EEG MNE mode)* MNE-BIDS directory — structure: `sub-{id}/[ses-{ses}/]eeg/*_task-{task}_eeg.fif`. Band-power features (delta/theta/alpha/beta/gamma per channel) are extracted automatically. Configure `eeg_mne_task` in `invoke.yaml` to select the task (default: `rest`). |
-| `fmri_features.tsv` | *(fMRI TSV mode)* Flat table: `participant_id` + one column per connectivity value (upper triangle of the ROI × ROI matrix). |
-| `halfpipe_output/` | *(fMRI Halfpipe mode)* Halfpipe BIDS derivatives — one subfolder per subject with structure `sub-{id}/ses-1/func/task-rest/`. Each run produces three files: `*_feature-{strategy}_atlas-{atlas}_desc-correlation_matrix.tsv` (no header, raw numbers), `*_timeseries.tsv` (timepoints × ROIs, with ROI headers), `*_timeseries.json` (mean_fd, max_fd, fd_perc, n_timepoints, tr). |
+| `phenotype.tsv` | One row per participant. Required columns: `participant_id`, `age`, `gender`, `study_site`, `diagnosis` (0/1). Additional columns are usable as prediction targets. Configure via `phenotype_file` in `invoke.yaml`. |
+| Any `.tsv` file *(EEG)* | Flat table: `participant_id` + one column per EEG feature. Set `eeg_path` to the file path. |
+| Any MNE-BIDS directory *(EEG)* | Structure: `sub-{id}/[ses-{ses}/]eeg/*_task-{task}_eeg.fif`. Band-power features (delta/theta/alpha/beta/gamma per channel) extracted automatically. Set `eeg_path` to the directory and `eeg_mne_task` to the BIDS task label (default: `rest`). |
+| Any `.tsv` file *(fMRI)* | Flat table: `participant_id` + one column per connectivity value (upper triangle of the ROI × ROI matrix). Set `fmri_path` to the file path. |
+| Any Halfpipe directory *(fMRI)* | BIDS derivatives — one subfolder per subject: `sub-{id}/[ses-{ses}/]func/task-rest/*_feature-{strategy}_atlas-{atlas}_desc-correlation_matrix.tsv` (no header, raw numbers). Set `fmri_path` to the directory and `fmri_halfpipe_strategy` to the denoising tag (e.g. `Baseline`, `36P`). |
 
 ## Smoke data
 

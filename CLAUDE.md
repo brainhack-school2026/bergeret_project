@@ -8,9 +8,9 @@ This is **NeuroMeld** — a reproducible multimodal EEG/fMRI fusion pipeline for
 
 **Goal:** predict a configurable phenotypic target (e.g. diagnosis, age) using EEG features only, fMRI connectivity features only, and both combined — to compare modality contributions.
 
-**Input formats:** the pipeline accepts flat TSVs or raw tool outputs for each modality:
-- EEG: `eeg_features.tsv` OR a MNE-BIDS directory (`sub-*/[ses-*/]eeg/*_eeg.fif`) — band-power features (delta/theta/alpha/beta/gamma × channel) are extracted automatically via `load_eeg_mne()`. Configure `eeg_mne_task` in `invoke.yaml` to select the BIDS task label (default: `rest`).
-- fMRI: `fmri_features.tsv` OR a Halfpipe derivatives directory (detected by presence of `*_desc-correlation_matrix.tsv` files under `sub-*` dirs)
+**Input formats:** the pipeline accepts flat TSVs or raw tool outputs for each modality. The format is auto-detected from the path set in `invoke.yaml`:
+- EEG (`eeg_path`): any `.tsv` file → flat feature table; any directory containing `*_eeg.fif` → MNE-BIDS (band-power features extracted automatically via `load_eeg_mne()`). Configure `eeg_mne_task` to select the BIDS task label (default: `rest`).
+- fMRI (`fmri_path`): any `.tsv` file → flat connectivity table; any directory containing `*_desc-correlation_matrix.tsv` → Halfpipe derivatives. Configure `fmri_halfpipe_strategy` for the denoising tag.
 
 **Chunk concept:** subjects (`participant_id`) are the unit of processing.
 
