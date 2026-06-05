@@ -77,28 +77,45 @@ conda activate airoh_env
 
 For maximum reproducibility on HPC clusters, a Singularity image bakes the
 code and all dependencies. Data is provided at runtime via bind mounts.
-Input format (TSV vs MNE / Halfpipe) is **auto-detected** — no flag needed.
+Input format (TSV vs MNE-BIDS / Halfpipe) is **auto-detected** from the path.
 
-### Build the image
+### Get the image
 
-**Option A — Docker first (build locally, run on HPC):**
+**Option A — Pull from GitHub Container Registry (recommended, no build needed):**
 ```bash
-# 1. Build Docker image
-docker build -t neuromeld .
+# Apptainer (Compute Canada / most HPC):
+apptainer pull neuromeld.sif docker://ghcr.io/pbergeret12/neuromeld:latest
 
-# 2. Convert to Singularity SIF
-singularity build brainhack_multimodal.sif docker-daemon://neuromeld:latest
-
-# 3. Transfer the .sif to your HPC
-scp brainhack_multimodal.sif user@hpc.cluster.ca:~/projects/
+# Singularity:
+singularity pull neuromeld.sif docker://ghcr.io/pbergeret12/neuromeld:latest
 ```
 
-**Option B — Singularity only (build directly on HPC, no Docker needed):**
+**Option B — Build from source locally, transfer to HPC:**
 ```bash
-# Requires fakeroot or sudo; run from the project root
-singularity build --fakeroot brainhack_multimodal.sif singularity.def
-# or with Apptainer:
-apptainer build --fakeroot brainhack_multimodal.sif singularity.def
+# 1. Build for linux/amd64 (required for HPC — Mac users must specify platform)
+docker buildx build --platform linux/amd64 -t neuromeld:amd64 --load .
+
+# 2. Save as tar
+docker save neuromeld:amd64 -o neuromeld.tar
+
+# 3. Transfer and convert on HPC
+scp neuromeld.tar user@hpc.cluster.ca:~/
+apptainer build neuromeld.sif docker-archive://neuromeld.tar
+```
+
+**Option C — Build directly on HPC (fakeroot required):**
+```bash
+apptainer build --fakeroot neuromeld.sif singularity.def
+```
+
+### Smoke test (no data needed)
+
+Verify the image works end-to-end with synthetic data:
+```bash
+apptainer run neuromeld.sif --smoke
+
+# Keep the outputs:
+apptainer run neuromeld.sif --smoke --output-dir ./smoke_outputs
 ```
 
 ### Run
