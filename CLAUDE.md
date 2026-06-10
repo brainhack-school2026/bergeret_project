@@ -63,7 +63,7 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 | `run-load-eeg` | TSV or MNE folder (filtered to `subjects.txt`) | `output_data/eeg_features.tsv` | `analysis/load_eeg.py` |
 | `run-load-fmri` | TSV or Halfpipe folder (filtered to `subjects.txt`) | `output_data/fmri_features.tsv` | `analysis/load_fmri.py` |
 | `run-predict` | both feature TSVs + phenotype | `output_data/results/metrics.tsv`, `fold_scores.tsv` | `analysis/predict.py` |
-| `run-notebooks` | `output_data/results/` | `output_data/scores_by_condition.png`, `fold_distribution.png` | `notebooks/results_overview.ipynb` |
+| `run-notebooks` | `output_data/results/` | `output_data/scores_by_condition_{target}.png`, `feature_importance_{target}.png` | `notebooks/results_overview.ipynb` |
 
 **Cleaning tasks:** `clean-intersect` removes `subjects.txt`; `clean-outputs` removes flat TSVs and PNGs; `clean-predict` removes `output_data/results/`; `clean-smoke` removes `source_data/smoke/`. The top-level `clean` calls all four.
 
@@ -78,11 +78,11 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 3. **GLM confound correction** — OLS regression of `age`, `gender`, `study_site` out of features; the target column is never used as a confound. Subjects with missing confound values are excluded upstream in `run-intersect`.
 4. **NaN handling** — before entering the CV loop, `load_eeg` and `load_fmri` both drop all-NaN feature columns and median-impute remaining sparse NaN at the group level.
 5. **Nested cross-validation** — outer k-fold for generalisation, inner k-fold for hyperparameter tuning. Inside each outer fold:
-   - `SimpleImputer` (median) → PCA (fitted on training split only) → `StandardScaler` → model.
+   - `SimpleImputer` (median) → `StandardScaler` → PCA (fitted on the training split only) → model. In the multimodal condition the scaler+PCA is fitted **independently per modality** (EEG, fMRI) via a `ColumnTransformer` and the per-modality components are concatenated before the model, so the larger fMRI feature block cannot dominate a shared PCA and crush the EEG block.
    - `GridSearchCV` on inner splits optimises **AUC** for classification, **neg-MAE** for regression.
    - Best model evaluated on the held-out outer fold.
-6. **Permutation test** — `n_permutations` shuffles of `y` build a null distribution; p-value = fraction of null scores ≥ observed (primary metric: AUC for classification, Pearson r for regression).
-7. **Paired t-tests** — fold-level scores compared between EEG-only vs fMRI-only, EEG-only vs multimodal, fMRI-only vs multimodal.
+6. **Permutation test (vs chance)** — `n_permutations` shuffles of `y` build a null distribution; p-value = fraction of null scores ≥ observed (primary metric: AUC for classification, MAE for regression — for MAE the count is ≤ observed, lower is better). One shared set of permutations is drawn once and applied to all three conditions at the same permutation index.
+7. **Inter-modality permutation test** — significance of the score *difference* between conditions (EEG-only vs fMRI-only, EEG-only vs multimodal, fMRI-only vs multimodal). For each pair the observed Δ = score(a) − score(b); the null Δ reuses the **same permuted labels** for both conditions (the shared permutations from step 6, aligned by index), so the test is paired. Two-sided p-value = (#{|Δ_null| ≥ |Δ_obs|} + 1) / (n_permutations + 1). This replaces an earlier paired t-test on the few, non-independent CV folds, which was both underpowered and miscalibrated (overlapping training sets violate the t-test independence assumption).
 
 **Primary metrics:**
 - Classification: `roc_auc` (AUC-ROC). `balanced_accuracy` is also reported.
@@ -91,24 +91,23 @@ The full pipeline runs as: `fetch → run-load-eeg → run-load-fmri → run-pre
 **Supported models** (`model_type` in `invoke.yaml`): `logistic`, `ridge`, `elasticnet`, `svm`, `random_forest`. For regression targets, `logistic` maps to `Ridge`.
 
 **Outputs:**
-- `output_data/results/{target}/metrics.tsv` — one row per condition: mean/std for all metrics, `p_vs_chance`, paired p-values.
+- `output_data/results/{target}/metrics.tsv` — one row per condition: mean/std for all metrics, `p_vs_chance`, and the inter-modality difference p-values (`p_eeg_only_vs_fmri_only`, `p_eeg_only_vs_multimodal`, `p_fmri_only_vs_multimodal`).
 - `output_data/results/{target}/fold_scores.tsv` — raw per-fold scores in long format.
 - `output_data/results/{target}/feature_importances.tsv` — per-feature importance (mean/std across outer folds), columns: `condition`, `feature`, `modality`, `importance_mean`, `importance_std`. Not produced for SVM RBF.
 
-**Feature importance:** `_extract_feature_importance(gs, pca)` projects model-native importance back to original feature space. For linear models (`coef_`): `mean(|coef|) / scaler.scale_ @ |pca.components_|`. For RandomForest (`feature_importances_`): `fi @ |pca.components_|` (MDI in PCA space, approximate). For SVM RBF: returns None (skipped with warning). In the multimodal condition features are tagged `eeg` or `fmri` so per-modality aggregates can be computed downstream.
+**Feature importance:** `_extract_feature_importance(best_pipe)` projects model-native importance back to original feature space. For linear models (`coef_`): `mean(|coef|) @ |pca.components_| / scaler.scale_`. For RandomForest (`feature_importances_`): `fi @ |pca.components_|` (MDI in PCA space, approximate). For SVM RBF: returns None (skipped with warning). In the multimodal condition the pipeline has one PCA per modality, so each modality block of the model coefficients is projected back through its **own** PCA/scaler and the results concatenated in original feature order (EEG first, then fMRI); features are tagged `eeg` or `fmri`.
 
 **Known methodological limitations (acceptable for Brainhack, revisit before publication):**
 - *Confound correction before CV*: `correct_confounds` fits OLS betas on all subjects (including test folds) before the CV loop. The strictly correct approach is to fit the confound model on each training fold and apply it to the held-out fold. This refactor would require passing the confound matrix into `_run_nested_cv`. The bias introduced by the current approach is small when confounds are weakly correlated with features, but could inflate performance estimates in edge cases (e.g. strong site effects with small N per site).
 - *Group-level NaN imputation before CV*: `impute_eeg_features` and `impute_fmri_features` compute column medians across all subjects (test included) and impute sparse NaN before the CV loop. The `SimpleImputer` inside the CV fold is therefore a no-op. Strictly, the median should be computed on the training fold only. In practice the bias is negligible (~2% NaN, large N) — moving imputation inside CV would not lose any subjects (the imputer still fills NaN, just with a training-only median).
+- *Null hypothesis of the inter-modality test*: the difference test permutes the labels, so its null is "neither condition carries any signal". It therefore answers "is the observed performance difference larger than what no-signal data would produce?" rather than the stricter "do both modalities carry signal but to a different degree?". This is the standard, conservative label-permutation approach and is far better calibrated than a t-test on overlapping CV folds, but it is not a test of equal-but-nonzero performance.
 
 ## Notebooks
 
 `notebooks/results_overview.ipynb` reads `output_data/results/` and produces figures per target:
-- `scores_by_condition_{target}.png` — bar chart (mean ± std) with per-fold overlay, p-vs-chance annotations, and significance brackets (paired t-tests).
-- `fold_distribution_{target}.png` — violin plot of per-fold score distribution per condition.
+- `scores_by_condition_{target}.png` — bar chart (mean ± std) with per-fold overlay, the exact metric value + significance vs chance annotated above each bar, and significance brackets (inter-modality permutation test).
 - `feature_importance_{target}.png` — top-20 features per condition (horizontal bar chart), coloured by modality.
-- `modality_importance_{target}.png` — mean importance aggregated by modality (EEG vs fMRI) for the multimodal condition.
-- A significance summary cell prints p-values (vs chance + paired t-tests) with star notation.
+- A significance summary cell prints p-values (vs chance + inter-modality permutation tests) with star notation.
 
 Notebooks receive `OUTPUT_DATA_DIR` and `SOURCE_DATA_DIR` as environment variables (injected by `airoh.utils.run_notebooks`). All heavy computation must remain in `analysis/` — notebooks are visualization only.
 

@@ -21,16 +21,107 @@ https://docs.google.com/presentation/d/1_PjdkNkijDH6QF2Ss8QrRItPPI3XfQpy/edit?sl
 
 ---
 
-Reproducible multimodal EEG/fMRI fusion pipeline for psychiatric prediction.
-Built for Brainhack School 2026 using the [`airoh`](https://pypi.org/project/airoh/) task runner.
+## Introduction
 
-The pipeline trains separate prediction models on EEG features, fMRI connectivity features,
-and both combined — so you can compare whether one modality, the other, or their fusion
-best predicts a chosen phenotypic target (e.g. diagnosis, age, a clinical score).
-Primary metric is **AUC-ROC** for classification and **MAE** for regression.
+**NeuroMeld** is a reproducible multimodal EEG/fMRI fusion pipeline for psychiatric
+prediction, built for Brainhack School 2026 using the
+[`airoh`](https://pypi.org/project/airoh/) task runner.
 
-**Designed to be used with [Claude Code](https://claude.ai/code).** Run `/init-airoh-project`
-in a fresh clone to set up or extend the pipeline.
+The pipeline trains three separate prediction models — one on EEG features alone, one on
+fMRI connectivity features alone, and one on both combined — and compares them head to
+head. The goal is to find out whether one modality, the other, or their fusion best
+predicts a chosen phenotypic target (e.g. diagnosis, age, a clinical score). The primary
+metric is **AUC-ROC** for classification and **MAE** for regression, and every result
+comes with a permutation-based p-value against chance.
+
+## Why combine EEG and fMRI?
+
+EEG and fMRI are complementary windows onto brain activity, each with a different
+strength:
+
+- **fMRI** offers excellent **spatial resolution** — it tells you *where* in the brain
+  activity and connectivity patterns live, down to the millimetre, but it is slow
+  (seconds).
+- **EEG** offers excellent **temporal resolution** — it tracks neural dynamics on the
+  scale of milliseconds, capturing *when* things happen, but with poor spatial precision.
+
+Most studies use one modality or the other. By fusing both, NeuroMeld lets you exploit
+the spatial precision of fMRI *and* the temporal precision of EEG at the same time, and —
+crucially — quantify whether that fusion actually buys you anything over either modality
+on its own for a given prediction task.
+
+## Methods
+
+NeuroMeld is designed to work with **brain connectivity data** (fMRI) and **spectral EEG
+features** such as band power. It expects a cohort of subjects who have data for **both
+modalities** — only subjects present in EEG, fMRI, *and* the phenotype file are kept for
+analysis.
+
+**Required input — phenotype file.** Whatever the modality formats, you always need a
+phenotype table in **TSV** format with (at minimum) the following columns:
+
+| Column | Meaning |
+|---|---|
+| `participant_id` | Subject identifier — the key that links every input together |
+| `age` | Subject age |
+| `gender` | Subject gender |
+| `study_site` | Acquisition site |
+
+`age`, `gender`, and `study_site` are used as confounds and regressed out of the features
+before prediction, so the models are not just learning site or demographic effects.
+
+**fMRI input — two accepted formats:**
+- **Halfpipe output** — a directory of connectivity matrices preprocessed by
+  [Halfpipe](https://github.com/HALFpipe/HALFpipe). This is a per-subject folder layout,
+  and **the subject folder names must match exactly the values in the `participant_id`
+  column** of the phenotype file.
+- **A flat TSV** — any TSV with a `participant_id` column (to link back to the phenotype
+  file) and one column per feature. The feature columns can be anything you like.
+
+**EEG input — two accepted formats:**
+- **MNE-BIDS output** — a directory of EEG data formatted with
+  [MNE-BIDS](https://mne.tools/mne-bids/). This is also a per-subject folder layout, and
+  again **the subject folder names must match exactly the `participant_id` values** in the
+  phenotype file. Band-power features are extracted automatically.
+- **A flat TSV** — any TSV with a `participant_id` column and one column per feature,
+  exactly like the fMRI TSV case.
+
+In short, you always provide three things: a **phenotype TSV**, one **fMRI input**
+(Halfpipe directory *or* TSV), and one **EEG input** (MNE-BIDS directory *or* TSV). The
+format of each input is auto-detected from its path — you do not need to declare it.
+
+For the exact commands to configure these paths and run the pipeline, see the
+[**Quick Start**](#quick-start) and the sections below it.
+
+## Data
+
+NeuroMeld was originally developed to help analyse the **HBN (Healthy Brain Network)**
+dataset, which provides both resting-state EEG **and** resting-state fMRI for around
+**850 participants**. That dataset cannot be shared publicly here for legal reasons, so it
+is not included in this repository.
+
+The tool can still be tried out by anyone, thanks to **synthetic data**. The
+`analysis/generate_synthetic.py` generator produces a small cohort of fake subjects in all
+four supported input formats (Halfpipe-style directory and flat TSV for fMRI, MNE-BIDS
+directory and flat TSV for EEG), with a weak but real signal so the pipeline produces
+meaningful results. The following sections show how to generate this data and run the full
+pipeline end to end with a single `invoke` command (see `invoke generate-smoke-data` and
+`invoke run-smoke`).
+
+## Tools learned during the project
+
+This project was also a chance to learn new tools and ways of working:
+
+- **Coupling [Claude Code](https://claude.ai/code) with [`airoh`](https://pypi.org/project/airoh/).**
+  I discovered that pairing an AI coding assistant with the `airoh` task runner is a
+  remarkably powerful combination for building a data science project. It let me reach a
+  level of reproducibility I would not have had time to achieve otherwise — fully
+  reproducible `invoke run` commands, and even **containerisation** (Docker / Singularity
+  images), which would normally have been out of reach within the timeframe of the school.
+- **The BIDS organisation of EEG data.** I learned how EEG datasets are structured under
+  the [BIDS](https://bids.neuroimaging.io/) standard (and the MNE-BIDS layout in
+  particular), which made it natural to ingest real EEG derivatives directly into the
+  pipeline.
 
 ---
 
@@ -250,7 +341,7 @@ See [`output_data/CONTENT.md`](output_data/CONTENT.md) for a description of all 
 
 | Notebook | Description | Figures produced |
 |---|---|---|
-| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition_{target}.png` (bar + fold overlay, significance brackets), `fold_distribution_{target}.png` (violin per condition), `feature_importance_{target}.png` (top-20 features per condition, coloured by modality), `modality_importance_{target}.png` (EEG vs fMRI aggregate for multimodal) — one set of figures per prediction target |
+| `notebooks/results_overview.ipynb` | Visualises prediction results from `output_data/results/` | `scores_by_condition_{target}.png` (bar + fold overlay, exact metric value per bar, inter-modality significance brackets) and `feature_importance_{target}.png` (top-20 features per condition, coloured by modality) — one set of figures per prediction target |
 
 ---
 

@@ -9,15 +9,22 @@ Steps per condition (EEG-only, fMRI-only, multimodal):
        outer k-fold — evaluate generalisation
        inner k-fold — tune hyperparameters
      Inside each outer fold:
-       a. Fit PCA on training split (explained variance threshold).
+       a. Fit PCA on training split (explained variance threshold). In the
+          multimodal condition, an independent PCA is fitted per modality
+          (EEG, fMRI) and the components concatenated, so the larger fMRI
+          feature block cannot dominate a shared PCA and crush the EEG block.
        b. Transform train and test with that PCA.
        c. GridSearchCV (inner CV) to pick best hyperparameters.
        d. Evaluate on outer test split.
   4. Collect per-fold scores.
   5. Permutation test (shuffle y) to build a null distribution and
-     estimate p-value vs chance.
-  6. Paired t-test between EEG-only and fMRI-only, EEG-only and
-     multimodal, fMRI-only and multimodal.
+     estimate p-value vs chance. One shared set of label permutations is
+     applied to all three conditions at once.
+  6. Inter-modality significance: permutation test on the score *difference*
+     between conditions (EEG-only vs fMRI-only, EEG-only vs multimodal,
+     fMRI-only vs multimodal). The null difference reuses the same permuted
+     labels for both conditions, so it is a valid paired test — far more
+     robust than a t-test on the few, non-independent CV folds.
 
 Outputs:
   output_data/results/metrics.tsv   — one row per condition with
@@ -34,6 +41,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from scipy import stats
+from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.impute import SimpleImputer
@@ -186,34 +194,87 @@ def _score(y_true, y_pred, task_type: str, y_score=None) -> dict:
         }
 
 
-def _extract_feature_importance(gs, pca: PCA):
+def _build_preprocess_model(estimator, n_samples, n_features, split, pca_variance, random_state):
+    """Build the scale → PCA → model pipeline for one condition.
+
+    Pipeline order is scale-first, then PCA: scaling AFTER PCA would normalise
+    each PC to unit variance, amplifying noise (low-variance) components as much
+    as signal ones.
+
+    - split is None → single modality: one StandardScaler → PCA → model.
+    - split is an int → multimodal: an INDEPENDENT StandardScaler → PCA per
+      modality (EEG = columns [:split], fMRI = columns [split:]) via a
+      ColumnTransformer, then the per-modality components are concatenated before
+      the model. This stops a modality with many more features (fMRI ≫ EEG) from
+      dominating a shared PCA and crushing the smaller modality.
+    """
+    def _pca(n_feat):
+        # float pca_variance (e.g. 0.95) → keep that fraction of variance;
+        # int → that many components, capped at the train-fold rank.
+        n_comp = min(pca_variance, n_samples - 1, n_feat)
+        return PCA(n_components=n_comp, random_state=random_state)
+
+    if split is None:
+        return Pipeline([
+            ("scaler", StandardScaler()),
+            ("pca", _pca(n_features)),
+            ("model", estimator),
+        ])
+
+    eeg_cols = list(range(split))
+    fmri_cols = list(range(split, n_features))
+    pre = ColumnTransformer([
+        ("eeg",  Pipeline([("scaler", StandardScaler()), ("pca", _pca(len(eeg_cols)))]),  eeg_cols),
+        ("fmri", Pipeline([("scaler", StandardScaler()), ("pca", _pca(len(fmri_cols)))]), fmri_cols),
+    ])
+    return Pipeline([("pre", pre), ("model", estimator)])
+
+
+def _extract_feature_importance(best_pipe):
     """
     Project model importance back to original feature space via PCA loadings.
 
-    Pipeline order is scaler → pca → model, so:
-    - For linear models (coef_): importance in PCA space is projected back to
-      scaled-feature space via |pca.components_|, then divided by scaler.scale_
-      to reach the original feature space.
-    - For RandomForest (feature_importances_): MDI scores in PCA space are
-      distributed back to original features proportionally to loading magnitudes.
+    Handles both pipeline shapes built by `_build_preprocess_model`:
+    - Single modality (scaler → pca → model): project straight back.
+    - Multimodal (ColumnTransformer of per-modality scaler → pca branches → model):
+      the model spans the concatenated PCA components; each modality block is
+      projected back through its OWN pca/scaler, then re-concatenated in original
+      feature order (EEG first, then fMRI), matching the multimodal feature list.
 
-    Returns None for SVM RBF (no analytic importance available).
+    For linear models (coef_): |coef| in PCA space → scaled-feature space via
+    |pca.components_|, then ÷ scaler.scale_ to reach original feature space.
+    For RandomForest (feature_importances_): MDI distributed back through
+    |pca.components_| (approximate). Returns None for SVM RBF.
     """
-    best_pipe = gs.best_estimator_
     model = best_pipe.named_steps["model"]
-    scaler = best_pipe.named_steps["scaler"]
-    loadings = np.abs(pca.components_)  # (n_components, n_features)
-
     if hasattr(model, "coef_"):
-        coef = np.atleast_2d(model.coef_)           # (n_classes_or_1, n_components)
-        coef_1d = np.mean(np.abs(coef), axis=0)     # (n_components,)
-        # Project PCA space → scaled-feature space → original feature space
-        return (coef_1d @ loadings) / scaler.scale_  # (n_features,)
+        vec = np.mean(np.abs(np.atleast_2d(model.coef_)), axis=0)  # (n_components,)
+        is_linear = True
+    elif hasattr(model, "feature_importances_"):
+        vec = np.asarray(model.feature_importances_)               # (n_components,)
+        is_linear = False
+    else:
+        return None  # SVM RBF
 
-    if hasattr(model, "feature_importances_"):
-        return model.feature_importances_ @ loadings  # (n_features,)
+    def _project(block, pca, scaler):
+        imp = block @ np.abs(pca.components_)        # PCA space → scaled-feature space
+        return imp / scaler.scale_ if is_linear else imp
 
-    return None  # SVM RBF
+    # Single-modality pipeline: scaler → pca → model
+    if "pca" in best_pipe.named_steps:
+        return _project(vec, best_pipe.named_steps["pca"], best_pipe.named_steps["scaler"])
+
+    # Multimodal pipeline: per-modality (scaler → pca) branches in a ColumnTransformer
+    ct = best_pipe.named_steps["pre"]
+    parts, start = [], 0
+    for name, branch, _cols in ct.transformers_:
+        if name == "remainder":
+            continue
+        pca = branch.named_steps["pca"]
+        k = pca.n_components_
+        parts.append(_project(vec[start:start + k], pca, branch.named_steps["scaler"]))
+        start += k
+    return np.concatenate(parts)
 
 
 def _run_nested_cv(
@@ -225,9 +286,14 @@ def _run_nested_cv(
     n_inner: int = 5,
     pca_variance: float = 0.95,
     random_state: int = 0,
+    split: int | None = None,
     return_importances: bool = False,
 ):
-    """Return per-fold score dicts, and optionally per-fold importance arrays."""
+    """Return per-fold score dicts, and optionally per-fold importance arrays.
+
+    `split` (number of EEG features) selects per-modality PCA for the multimodal
+    condition; None means single-modality (one PCA over all features).
+    """
     is_clf = task_type == "classification"
     outer_cv = (
         StratifiedKFold(n_splits=n_outer, shuffle=True, random_state=random_state)
@@ -253,16 +319,10 @@ def _run_nested_cv(
         X_tr = imputer.fit_transform(X_tr)
         X_te = imputer.transform(X_te)
 
-        # Correct pipeline order: scale first, then PCA, then model.
-        # Scaling AFTER PCA (old order) would normalise each PC to unit variance,
-        # amplifying noise components (low-variance PCs) as much as signal
-        # components and destroying the signal for subtle targets (e.g. ADHD).
-        n_components = min(pca_variance, X_tr.shape[0] - 1, X_tr.shape[1])
-        pipe = Pipeline([
-            ("scaler", StandardScaler()),
-            ("pca", PCA(n_components=n_components, random_state=random_state)),
-            ("model", estimator),
-        ])
+        # Single PCA (single modality) or one PCA per modality (multimodal, split set).
+        pipe = _build_preprocess_model(
+            estimator, X_tr.shape[0], X_tr.shape[1], split, pca_variance, random_state
+        )
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -281,8 +341,7 @@ def _run_nested_cv(
         fold_scores.append(_score(y_te, y_pred, task_type, y_score=y_score))
 
         if return_importances:
-            pca_fitted = gs.best_estimator_.named_steps["pca"]
-            fold_importances.append(_extract_feature_importance(gs, pca_fitted))
+            fold_importances.append(_extract_feature_importance(gs.best_estimator_))
 
     if return_importances:
         return fold_scores, fold_importances
@@ -291,8 +350,24 @@ def _run_nested_cv(
 
 # ── permutation test ────────────────────────────────────────────────────────
 
-def _permutation_test(
-    X: np.ndarray,
+def _pvalue_vs_chance(
+    observed: float, null_arr: np.ndarray, n_permutations: int, lower_is_better: bool
+) -> float:
+    """p-value of an observed score against its permutation null.
+
+    Higher-is-better metrics (AUC, Pearson r): fraction of null scores >= observed.
+    Lower-is-better metrics (MAE): fraction of null scores <= observed.
+    The +1 in numerator and denominator keeps the p-value strictly positive
+    (the observed result counts as one outcome of the null).
+    """
+    if lower_is_better:
+        return (np.sum(null_arr <= observed) + 1) / (n_permutations + 1)
+    return (np.sum(null_arr >= observed) + 1) / (n_permutations + 1)
+
+
+def _run_permutations(
+    conditions: dict[str, np.ndarray],
+    splits: dict[str, int | None],
     y: np.ndarray,
     model_type: str,
     task_type: str,
@@ -302,35 +377,50 @@ def _permutation_test(
     n_permutations: int,
     primary_metric: str,
     random_state: int = 0,
-    label: str = "",
-) -> float:
-    """Return p-value vs chance.
+) -> tuple[dict[str, float], dict[str, np.ndarray]]:
+    """Run nested CV under the true labels and under shared label permutations.
 
-    For metrics where higher is better (AUC, Pearson r): fraction of null scores >= observed.
-    For metrics where lower is better (MAE): fraction of null scores <= observed.
+    The SAME permuted label vector is drawn once per iteration and applied to
+    every condition. This keeps the conditions paired (same subjects, same
+    shuffled labels), so the null distribution of any *difference* between two
+    conditions is valid: under H0 (labels carry no signal) the per-permutation
+    difference of their scores is pure noise. Reusing one permutation across
+    conditions — rather than an independent shuffle per condition — preserves
+    the correlation between conditions and keeps the difference null calibrated.
+
+    Returns:
+        observed — {condition: mean primary-metric score on the true labels}
+        null     — {condition: array of n_permutations mean scores}, aligned by
+                   permutation index across conditions (null[a][i] and null[b][i]
+                   use the same shuffled labels).
     """
-    lower_is_better = primary_metric == "mae"
     rng = np.random.default_rng(random_state)
-    observed_folds = _run_nested_cv(X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state)
-    observed = np.mean([f[primary_metric] for f in observed_folds])
 
-    null_scores = []
+    # Observed scores on the true labels (one nested-CV run per condition).
+    observed = {}
+    for name, X in conditions.items():
+        folds = _run_nested_cv(
+            X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state,
+            split=splits[name],
+        )
+        observed[name] = float(np.mean([f[primary_metric] for f in folds]))
+
+    # Null scores: shared permutation per iteration, evaluated on every condition.
+    null: dict[str, list] = {name: [] for name in conditions}
     milestone = max(1, n_permutations // 10)
     for i in range(n_permutations):
         y_perm = rng.permutation(y)
-        perm_folds = _run_nested_cv(
-            X, y_perm, model_type, task_type, n_outer, n_inner, pca_variance, random_state + i + 1
-        )
-        null_scores.append(np.mean([f[primary_metric] for f in perm_folds]))
+        cv_seed = random_state + i + 1
+        for name, X in conditions.items():
+            perm_folds = _run_nested_cv(
+                X, y_perm, model_type, task_type, n_outer, n_inner, pca_variance, cv_seed,
+                split=splits[name],
+            )
+            null[name].append(np.mean([f[primary_metric] for f in perm_folds]))
         if (i + 1) % milestone == 0:
-            print(f"[predict]   {label} permutation {i + 1}/{n_permutations}", flush=True)
+            print(f"[predict]   permutation {i + 1}/{n_permutations}", flush=True)
 
-    null_arr = np.array(null_scores)
-    if lower_is_better:
-        p_value = (np.sum(null_arr <= observed) + 1) / (n_permutations + 1)
-    else:
-        p_value = (np.sum(null_arr >= observed) + 1) / (n_permutations + 1)
-    return p_value
+    return observed, {name: np.asarray(vals) for name, vals in null.items()}
 
 
 # ── main entry point ────────────────────────────────────────────────────────
@@ -398,6 +488,14 @@ def run_prediction(
         "fmri_only": X_fmri,
         "multimodal": X_multi,
     }
+    # Multimodal fits an INDEPENDENT PCA per modality (split at the EEG/fMRI
+    # boundary) and concatenates the components, so the larger fMRI block cannot
+    # dominate a shared PCA and crush the EEG features. None → single PCA.
+    splits = {
+        "eeg_only": None,
+        "fmri_only": None,
+        "multimodal": X_eeg.shape[1],
+    }
 
     fold_records = []
     condition_folds = {}
@@ -407,7 +505,7 @@ def run_prediction(
         print(f"[predict] Running nested CV: {cond_name} …", flush=True)
         folds, importances = _run_nested_cv(
             X, y, model_type, task_type, n_outer, n_inner, pca_variance, random_state,
-            return_importances=True,
+            split=splits[cond_name], return_importances=True,
         )
         condition_folds[cond_name] = folds
         condition_importances[cond_name] = importances
@@ -422,19 +520,31 @@ def run_prediction(
 
     fold_df = pd.DataFrame(fold_records)
 
-    # ── permutation tests ───────────────────────────────────────────────────
-    perm_pvalues = {}
-    for cond_name, X in conditions.items():
-        print(f"[predict] Permutation test: {cond_name} ({n_permutations} permutations) …", flush=True)
-        perm_pvalues[cond_name] = _permutation_test(
-            X, y, model_type, task_type, n_outer, n_inner, pca_variance,
-            n_permutations, primary_metric, random_state, label=cond_name
+    # ── permutation tests (vs chance + inter-modality differences) ──────────
+    # One set of label permutations is shared across all three conditions, so it
+    # serves two purposes at once: the per-condition null (significance vs chance)
+    # and the per-pair difference null (inter-modality significance) — no extra cost.
+    lower_is_better = primary_metric == "mae"
+    print(
+        f"[predict] Permutation tests ({n_permutations} permutations, shared across conditions) …",
+        flush=True,
+    )
+    perm_observed, perm_null = _run_permutations(
+        conditions, splits, y, model_type, task_type, n_outer, n_inner, pca_variance,
+        n_permutations, primary_metric, random_state,
+    )
+    perm_pvalues = {
+        cond_name: _pvalue_vs_chance(
+            perm_observed[cond_name], perm_null[cond_name], n_permutations, lower_is_better
         )
+        for cond_name in conditions
+    }
 
-    # ── paired t-tests between conditions ──────────────────────────────────
-    def _primary_scores(cond):
-        return np.array([f[primary_metric] for f in condition_folds[cond]])
-
+    # ── inter-modality significance: permutation test on the score difference ──
+    # Δ_obs = score(a) − score(b) on the true labels. The null difference reuses
+    # the SAME permutation for both conditions at each index (perm_null is aligned),
+    # so this is a valid paired test of "are the two conditions' scores different?".
+    # Two-sided: |Δ_null| ≥ |Δ_obs|.
     pairs = [
         ("eeg_only", "fmri_only"),
         ("eeg_only", "multimodal"),
@@ -442,12 +552,11 @@ def run_prediction(
     ]
     paired_pvalues = {}
     for a, b in pairs:
-        diffs = _primary_scores(a) - _primary_scores(b)
-        if np.std(diffs) == 0:
-            paired_pvalues[f"{a}_vs_{b}"] = 1.0
-        else:
-            _, p = stats.ttest_rel(_primary_scores(a), _primary_scores(b))
-            paired_pvalues[f"{a}_vs_{b}"] = p
+        delta_obs = perm_observed[a] - perm_observed[b]
+        delta_null = perm_null[a] - perm_null[b]
+        paired_pvalues[f"{a}_vs_{b}"] = (
+            np.sum(np.abs(delta_null) >= np.abs(delta_obs)) + 1
+        ) / (n_permutations + 1)
 
     # ── build metrics table ─────────────────────────────────────────────────
     metric_rows = []
