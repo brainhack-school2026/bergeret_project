@@ -74,7 +74,10 @@ before prediction, so the models are not just learning site or demographic effec
 - **Halfpipe output** — a directory of connectivity matrices preprocessed by
   [Halfpipe](https://github.com/HALFpipe/HALFpipe). This is a per-subject folder layout,
   and **the subject folder names must match exactly the values in the `participant_id`
-  column** of the phenotype file.
+  column** of the phenotype file. Halfpipe is described in Waller, L., Erk, S., Pozzi, E.,
+  Toenders, Y. J., et al. (2022). *ENIGMA HALFpipe: Interactive, reproducible, and efficient
+  analysis for resting‐state and task‐based fMRI data.* **Human Brain Mapping**, 43(9),
+  2727–2742. [doi:10.1002/hbm.25829](https://doi.org/10.1002/hbm.25829).
 - **A flat TSV** — any TSV with a `participant_id` column (to link back to the phenotype
   file) and one column per feature. The feature columns can be anything you like.
 
@@ -82,7 +85,9 @@ before prediction, so the models are not just learning site or demographic effec
 - **MNE-BIDS output** — a directory of EEG data formatted with
   [MNE-BIDS](https://mne.tools/mne-bids/). This is also a per-subject folder layout, and
   again **the subject folder names must match exactly the `participant_id` values** in the
-  phenotype file. Band-power features are extracted automatically.
+  phenotype file. Band-power features are extracted automatically. A well-formatted example
+  EEG-BIDS dataset can be found on OpenNeuro:
+  [ds004107](https://openneuro.org/datasets/ds004107/versions/1.0.0).
 - **A flat TSV** — any TSV with a `participant_id` column and one column per feature,
   exactly like the fMRI TSV case.
 
@@ -122,6 +127,57 @@ This project was also a chance to learn new tools and ways of working:
   the [BIDS](https://bids.neuroimaging.io/) standard (and the MNE-BIDS layout in
   particular), which made it natural to ingest real EEG derivatives directly into the
   pipeline.
+
+## Preliminary results (HBN cohort)
+
+The figures below were produced by running NeuroMeld on the real **HBN** cohort. All
+analyses were run on **HPC (Compute Canada)**: because the pipeline is containerised, it
+can be called from SLURM `sbatch` scripts, which makes it easy to launch many analyses
+in parallel: several targets, models, and fMRI denoising strategies at once. Unless
+stated otherwise, all results below use fMRI connectivity denoised with Global Signal
+Regression (GSR).
+
+In each bar chart, the height is the mean cross-validated score (± std across folds), the
+dots are per-fold scores, stars above a bar mark significance **vs chance** (permutation
+test), and brackets mark significant **differences between conditions** (inter-modality
+permutation test).
+
+**Age** (regression — lower MAE is better):
+
+![Age prediction on HBN](preliminary_results/results_hbn_age.png)
+
+All three conditions predict age **significantly above chance**. fMRI connectivity
+massively outperforms EEG, and the multimodal model lands
+right on top of fMRI, combining the modalities brings no improvement over fMRI alone.
+
+**Gender** (classification — AUC-ROC):
+
+![Gender prediction on HBN](preliminary_results/results_hbn_gender.png)
+
+Again all three conditions are **significantly above chance**. The multimodal model is the
+highest numerically and is significantly better than EEG alone, but it does
+not significantly beat fMRI alone.
+
+**Autism** (classification — AUC-ROC):
+
+![Autism prediction on HBN](preliminary_results/results_hbn_autism.png)
+
+fMRI-only, and multimodal are **significantly above chance**, but
+**EEG alone is not** , autism is the one target EEG fails to
+predict. Once more the multimodal model does not improve on fMRI alone.
+
+**Take-away.** Across every target, the predictions beat chance — *except EEG for
+autism*, but the **added value of multimodality is not demonstrated**: fusing EEG and
+fMRI never significantly outperforms the best single modality on these data.
+
+**Sensitivity to fMRI denoising (autism, without GSR):**
+
+The results above all use GSR. When the fMRI denoising strategy is changed to **drop global
+signal regression**, **all significance disappears** for autism, no condition beats chance
+anymore (all p > 0.05). This shows how strongly the conclusions depend on the chosen
+preprocessing strategy.
+
+![Autism prediction on HBN without GSR](preliminary_results/results_hbn_noGSR_autism.png)
 
 ---
 
